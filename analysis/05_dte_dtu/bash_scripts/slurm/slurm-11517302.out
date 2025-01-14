@@ -1,0 +1,7 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+Nov 10 13:02:37 ..... started STAR run
+Nov 10 13:02:37 ... starting to generate Genome files
+
+EXITING because of INPUT ERROR: could not read from genomeFastaFile: /dev/fd/63
+
+Nov 10 13:03:00 ...... FATAL ERROR, exiting

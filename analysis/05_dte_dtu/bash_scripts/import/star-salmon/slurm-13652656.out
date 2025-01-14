@@ -1,0 +1,41 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(tximport)
+> library(readr)
+> library(magrittr)
+> library(tibble)
+> 
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant"
+> 
+> sa_files <- paste0(basedir, "/", list.files(basedir), "/quant.sf")
+> 
+> names(sa_files) <- list.files(basedir)
+> 
+> transCounts_sa <- tximport(sa_files,
++                            type = "salmon",
++                            txOut = TRUE,
++                            countsFromAbundance = "dtuScaledTPM")
+Error in tximport(sa_files, type = "salmon", txOut = TRUE, countsFromAbundance = "dtuScaledTPM") : 
+  'dtuScaledTPM' requires 'tx2gene' input
+Execution halted

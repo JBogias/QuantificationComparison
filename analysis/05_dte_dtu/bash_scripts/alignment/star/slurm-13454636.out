@@ -1,0 +1,22 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+May 12 14:07:41 ..... started STAR run
+May 12 14:07:41 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401116_R1.fastq.gz: No such file or directory
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 34704 Killed                  STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/R1/R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 14:08:43 ..... started STAR run
+May 12 14:08:43 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401116_R2.fastq.gz: No such file or directory
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 34885 Killed                  STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/R1/R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 14:09:49 ..... started STAR run
+May 12 14:09:49 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401117_R1.fastq.gz: No such file or directory
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 35079 Killed                  STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/R1/R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 14:10:59 ..... started STAR run
+May 12 14:10:59 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401117_R2.fastq.gz: No such file or directory
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 35265 Killed                  STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/R1/R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 14:12:12 ..... started STAR run
+May 12 14:12:12 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401118_R1.fastq.gz: No such file or directory
+slurmstepd: error: *** JOB 13454636 ON r5-n9 CANCELLED AT 2022-05-12T14:12:50 DUE TO TIME LIMIT ***
+slurmstepd: error: Detected 8 oom-kill event(s) in step 13454636.batch cgroup. Some of your processes may have been killed by the cgroup out-of-memory handler.

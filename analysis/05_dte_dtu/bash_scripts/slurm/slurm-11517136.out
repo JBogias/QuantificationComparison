@@ -1,0 +1,8 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+Nov 10 12:47:34 ..... started STAR run
+Nov 10 12:47:34 ... starting to generate Genome files
+
+EXITING because of INPUT ERROR: the file format of the genomeFastaFile: /hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz is not fasta: the first character is '' (31), not '>'.
+ Solution: check formatting of the fasta file. Make sure the file is uncompressed (unzipped).
+
+Nov 10 12:47:34 ...... FATAL ERROR, exiting

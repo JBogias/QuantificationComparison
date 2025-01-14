@@ -1,0 +1,580 @@
+---
+title: "Annotations Plotting"
+author: "Justin Bogias"
+date: "2023-09-19"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Setup
+```{r}
+library(rmdformats)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+library(magrittr)
+library(ggbeeswarm)
+library(tibble)
+library(ggplot2)
+library(here)
+```
+
+```{r}
+source(here("R/cor_funcs_variance.R"))
+source(here("R/theme_justin.R"))
+```
+
+# Load Annotations
+```{r}
+gene_txp_anno <- read_csv(here("data/grch38_103_df.csv.gz"))
+
+txp_gene_ensdb_lengths <- read_csv(
+  here("data/txp_gene_ensdb_lengths.csv.gz")
+  )
+
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+```
+
+# Load counts
+```{r}
+hisat2_dtelist <- read_rds(here("data/hisat2_dtelist.rds"))
+kallisto_dtelist <- read_rds(here("data/kallisto_dtelist.rds"))
+salmon_dtelist <- read_rds(here("data/sa_dtelist.rds"))
+star_dtelist <- read_rds(here("data/star_dtelist.rds"))
+```
+
+
+## Joined Data for Correlation dataframe
+Create joined data frames
+```{r lowcor_gtf}
+joined_df <- get_joined_samples(w = hisat2_dtelist,
+                                x = kallisto_dtelist,
+                                y = star_dtelist,
+                                z = salmon_dtelist,
+                                method_w = "Hisat2",
+                                method_x = "Kallisto",
+                                method_y = "STAR",
+                                method_z = "Salmon",
+                                sample = 1)
+
+cor_df <- joined_df
+cor_df$variance <- apply(cor_df[,-1], 1, var)
+```
+
+## Low Correlation Info
+### ensdb
+```{r lowcor_ensdb}
+lowcor_ensdb <- cor_df %>%
+  dplyr::arrange(desc(variance)) %>%
+  head(200) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+
+lowcor_ensdb <- lowcor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+```
+
+### GTF
+```{r}
+lowcor_gtf <- cor_df %>%
+  dplyr::arrange(desc(variance)) %>%
+  head(200) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id") %>%
+  dplyr::select(transcript_id) %>%
+  left_join(txp_gene_ensdb_lengths,
+            by = c("transcript_id" = "tx_id"))
+```
+
+## High Correlation Info
+```{r highcor_ensdb}
+highcor_ensdb <- cor_df %>%
+  dplyr::arrange(variance) %>%
+  head(200) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+
+highcor_ensdb <- highcor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+```
+
+### GTF
+```{r}
+highcor_gtf <- cor_df %>%
+  dplyr::arrange(desc(variance)) %>%
+  head(200) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id") %>%
+  dplyr::select(transcript_id) %>%
+  left_join(txp_gene_ensdb_lengths,
+            by = c("transcript_id" = "tx_id"))
+```
+
+# Low Correlation Annotations
+## Check annotations
+```{r}
+plot_cont_anno <- function(x) {
+  lowcor_gtf %>%
+    mutate(correlation = "Low") %>%
+    rbind(highcor_gtf %>%
+            mutate(correlation = "High")) %>%
+    ggplot(aes(x = correlation, y = .data[[x]])) +
+    geom_violin(fill = "yellow") +
+    geom_jitter(alpha = 0.4, colour = "red") +
+    labs(x = "Correlation between methods",
+         y = str_replace(paste(x),
+                         pattern = "_",
+                         replacement = " ") %>%
+           str_to_title() %>%
+           str_replace(pattern = "Gc",
+                       replacement = "GC")) +
+    theme(axis.title = element_text(colour = "black",
+                                    size = 12),
+          axis.text = element_text(colour = "black",
+                                   size = 10),
+          axis.line = element_line(colour = "black",
+                                   linewidth = 0.5),
+          panel.background = element_rect(fill = "white"),
+          panel.grid.major = element_line(colour = "grey80"),
+          panel.grid.minor = element_line(colour = "grey90"))
+}
+
+lowcor_transcript_length_plot <- plot_cont_anno(x = "transcript_length")
+lowcor_gc_content_plot <- plot_cont_anno(x = "gc_content")
+lowcor_gene_length_plot <- plot_cont_anno(x = "gene_length")
+
+ggsave(plot = lowcor_transcript_length_plot,
+       filename = "lowcor_transcript_length_plot.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = lowcor_gc_content_plot,
+       filename = "lowcor_gc_content_plot.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = lowcor_gene_length_plot,
+       filename = "lowcor_gene_length_plot.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+plot_cat_anno <- function(x) {
+  lowcor_gtf %>%
+    mutate(correlation = "Low") %>%
+    rbind(highcor_gtf %>%
+            mutate(correlation = "High")) %>%
+    ggplot() +
+    geom_bar(aes(x = correlation),
+             fill = "blue") +
+    facet_grid(~ .data[[x]]) +
+    theme(axis.title = element_text(colour = "black",
+                                    size = 12),
+          axis.text = element_text(colour = "black",
+                                   size = 10),
+          axis.line = element_line(colour = "black",
+                                   linewidth = 0.1),
+          strip.background = element_rect(fill = "lightblue",
+                                          colour = "black"),
+          plot.background = element_rect(colour = "black",
+                                         linewidth = 0.5),
+          panel.background = element_rect(fill = "white",
+                                          colour = "black",
+                                          linewidth = 0.5),
+          panel.border = element_rect(colour = "black",
+                                      linewidth = 0.5,
+                                      fill = NA),
+          panel.grid.major = element_line(colour = "grey80"),
+          panel.grid.minor = element_line(colour = "grey90"))
+}
+
+lowcor_tx_biotype_plot <- plot_cat_anno(x = "tx_biotype")
+lowcor_strand_plot <- plot_cat_anno(x = "strand")
+
+ggsave(plot = lowcor_tx_biotype_plot,
+       filename = "lowcor_tx_biotype_plot.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = lowcor_strand_plot,
+       filename = "lowcor_strand_plot.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+rm(geneSeqs)
+  
+```
+
+Turn into function
+Here we check to see the counts of the highly variable genes across all samples between methods
+```{r}
+star_dtelist %>%
+  cpm(log = TRUE) %>% 
+  as.data.frame() %>% 
+  rownames_to_column("transcript_id") %>% 
+  as_tibble() %>%
+  dplyr::filter(transcript_id %in% lowcor_ensdb$transcript_id) %>%
+  pivot_longer(cols = hisat2_dtelist$samples$ID,
+               names_to = "sample_id",
+               values_to = "counts") %>%
+  ggplot() +
+  geom_point(aes(x = sample_id, y = counts,
+                 colour = transcript_id)) + 
+  geom_line(aes(x = sample_id, y = counts,
+                group = transcript_id, colour = transcript_id)) + 
+  theme_justin() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45,
+                                   vjust = 0.5))
+
+lowcor_counts_per_sample <- function(x) {
+  x %>%
+    cpm(log = TRUE) %>% 
+    as.data.frame() %>% 
+    rownames_to_column("transcript_id") %>% 
+    as_tibble() %>%
+    dplyr::filter(transcript_id %in% lowcor_ensdb$transcript_id) %>%
+    pivot_longer(cols = hisat2_dtelist$samples$ID,
+                 names_to = "sample_id",
+                 values_to = "counts") %>%
+    ggplot() +
+    geom_violin(aes(x = sample_id, y = counts)) + 
+    geom_quasirandom(aes(x = sample_id, y = counts, colour = transcript_id),
+                     dodge.width = 0.3) +
+    theme_justin() +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45,
+                                     vjust = 0.5))
+}
+
+lowcor_hisat2_count_plot <- lowcor_counts_per_sample(hisat2_dtelist)
+lowcor_kallisto_count_plot <- lowcor_counts_per_sample(kallisto_dtelist)
+lowcor_salmon_count_plot <- lowcor_counts_per_sample(salmon_dtelist)
+lowcor_star_count_plot <- lowcor_counts_per_sample(star_dtelist)
+
+ggsave(plot = lowcor_hisat2_count_plot,
+       filename = "lowcor_hisat2_count_plot.png",
+       path = here("figures/counts_per_sample/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = lowcor_kallisto_count_plot,
+       filename = "lowcor_kallisto_count_plot.png",
+       path = here("figures/counts_per_sample/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = lowcor_salmon_count_plot,
+       filename = "lowcor_salmon_count_plot.png",
+       path = here("figures/counts_per_sample/"),
+       units = "cm",
+       height = 15,
+       width = 18)
+
+ggsave(plot = lowcor_star_count_plot,
+       filename = "lowcor_star_count_plot.png",
+       path = here("figures/counts_per_sample/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+```
+
+Now look at the annotations of the highly variable genes
+```{r}
+lowcor_length_vs_gc <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% lowcor_ensdb$transcript_id) %>%
+  ggplot() +
+  geom_point(aes(x = transcript_length, y = gc_content)) +
+  labs(x = "Transcript Length (bp)",
+       y = "GC Content") +
+  theme_justin()
+
+highcor_length_vs_gc <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% highcor_ensdb$transcript_id) %>%
+  ggplot() +
+  geom_point(aes(x = transcript_length, y = gc_content)) +
+  labs(x = "Transcript Length (bp)",
+       y = "GC Content") +
+  theme_justin()
+
+highcor_vs_lowcor_length <- rbind(txp_gene_ensdb_lengths %>%
+        dplyr::filter(tx_id %in% lowcor_ensdb$transcript_id) %>%
+        mutate(group = "lowcor"),
+      txp_gene_ensdb_lengths %>%
+        dplyr::filter(tx_id %in% highcor_ensdb$transcript_id) %>%
+        mutate(group = "cor")) %>%
+  dplyr::mutate(group = str_replace(group, "^cor", "Low Variance"),
+                group = str_replace(group, "lowcor", "High Variance")) %>%
+  ggplot(aes(x = group, y = transcript_length)) +
+  geom_violin(fill = "#99FFFF") +
+  geom_boxplot(width = 0.1, fill = "#00DFFF", colour = "black") +
+  geom_quasirandom(width = 0.2) +
+  labs(x = "Group",
+       y = "Transcript Length (bp)") +
+  theme_justin()
+
+highcor_vs_lowcor_gc <- rbind(txp_gene_ensdb_lengths %>%
+        dplyr::filter(tx_id %in% lowcor_ensdb$transcript_id) %>%
+        mutate(group = "lowcor"),
+      txp_gene_ensdb_lengths %>%
+        dplyr::filter(tx_id %in% highcor_ensdb$transcript_id) %>%
+        mutate(group = "cor")) %>%
+  dplyr::mutate(group = str_replace(group, "^cor", "Low Variance"),
+                group = str_replace(group, "lowcor", "High Variance")) %>%
+  ggplot(aes(x = group, y = gc_content)) +
+  geom_violin(fill = "#99FFFF") +
+  geom_boxplot(width = 0.1, fill = "#00DFFF", colour = "black") +
+  geom_quasirandom(width = 0.2) +
+  labs(x = "Group",
+       y = "GC Content (%)") +
+  theme_justin()
+  
+highcor_vs_lowcor_strand <- rbind(txp_gene_ensdb_lengths %>%
+        dplyr::filter(tx_id %in% lowcor_ensdb$transcript_id) %>%
+        mutate(group = "lowcor"),
+      txp_gene_ensdb_lengths %>%
+        dplyr::filter(tx_id %in% highcor_ensdb$transcript_id) %>%
+        mutate(group = "cor")) %>%
+  dplyr::mutate(group = str_replace(group, "^cor", "Low Variance"),
+                group = str_replace(group, "lowcor", "High Variance")) %>%
+  ggplot() +
+  geom_bar(aes(x = strand),
+                 stat = "count",
+                 colour = "black",
+                 fill = "#0E20AA",
+                 alpha = 0.85) +
+  geom_hline(yintercept = 0) +
+  labs(x = "Strand",
+       y = "Frequency") +
+  facet_grid(~ group) +
+  theme_justin_facets()
+
+ggsave(plot = lowcor_length_vs_gc,
+       filename = "lowcor_length_vs_gc.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = highcor_length_vs_gc,
+       filename = "highcor_length_vs_gc.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = highcor_vs_lowcor_length,
+       filename = "highcor_vs_lowcor_length.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = highcor_vs_lowcor_gc,
+       filename = "highcor_vs_lowcor_gc.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+
+ggsave(plot = highcor_vs_lowcor_strand,
+       filename = "highcor_vs_lowcor_strand.png",
+       path = here("figures/counts_info/"),
+       units = "cm",
+       height = 15,
+       width = 18,
+       create.dir = TRUE)
+```
+
+# Expression vs length (Figure 5)
+```{r}
+to_df <- function(x, method) {
+  x %>%
+    cpm(log = TRUE) %>%
+    as.data.frame() %>%
+    set_colnames(paste0(method, "_", colnames(.))) %>%
+    rownames_to_column("transcript_id") %>%
+    inner_join(txp_gene_ensdb_lengths %>%
+                 dplyr::select("transcript_id" = "tx_id", 
+                               "transcript_length",
+                               "gc_content"),
+               by = "transcript_id")
+}
+
+length_exp_df <- to_df(hisat2_dtelist, "hisat2") %>%
+  inner_join(to_df(kallisto_dtelist, "kallisto"),
+             by = c("transcript_id", "transcript_length", "gc_content")) %>%
+  inner_join(to_df(star_dtelist, "sa"),
+             by = c("transcript_id", "transcript_length", "gc_content")) %>%
+  inner_join(to_df(salmon_dtelist, "salmon"),
+             by = c("transcript_id", "transcript_length", "gc_content"))
+
+short_length_plot <- length_exp_df %>%
+  dplyr::select(sort(colnames(length_exp_df))) %>%
+  pivot_longer(cols = starts_with(c("b", "k", "s")),
+               names_to = "id",
+               values_to = "exp") %>%
+  mutate(aligner = str_remove(id, "\\_.*")) %>%
+  mutate(sample_id = str_extract(id, "SRR.*")) %>%
+  dplyr::filter(transcript_length < 400) %>%
+  ggplot() +
+  geom_smooth(
+    aes(x = transcript_length, y = exp, colour = aligner, fill = aligner)
+  ) +
+  scale_colour_viridis_d() +
+  scale_fill_viridis_d() +
+  labs(x = "Transcript Length (bp)",
+       y = "Transcript Expression (log2 CPM)",
+       fill = "Method",
+       colour = "Method") +
+  theme_justin()
+
+short_length_plot %>%
+  ggsave(filename = "suppfigure_short_length_txp.png",
+         path = here("figures/chapter_figures/"),
+         device = "png",
+         height = 17,
+         width = 20,
+         units = "cm",
+         create.dir = TRUE)
+
+# Length of 6000 chosen as that is the 3rd quantile of top 100 PC1 & 2 genes
+long_length_plot <- length_exp_df %>%
+  dplyr::select(sort(colnames(length_exp_df))) %>%
+  pivot_longer(cols = starts_with(c("b", "k", "s")),
+               names_to = "id",
+               values_to = "exp") %>%
+  mutate(aligner = str_remove(id, "\\_.*")) %>%
+  mutate(sample_id = str_extract(id, "SRR.*")) %>%
+  dplyr::filter(transcript_length < 6000) %>%
+  ggplot() +
+  geom_smooth(
+    aes(x = transcript_length, y = exp, colour = aligner, fill = aligner)
+  ) +
+  scale_colour_viridis_d() +
+  scale_fill_viridis_d() +
+  labs(x = "Transcript Length (bp)",
+       y = "Transcript Expression (log2 CPM)",
+       fill = "Method",
+       colour = "Method") +
+  theme_justin()
+
+long_length_plot %>%
+  ggsave(filename = "figure5_length_txp.png",
+         path = here("figures/chapter_figures/"),
+         device = "png",
+         height = 17,
+         width = 20,
+         units = "cm",
+         create.dir = TRUE)
+
+gc_plot <- length_exp_df %>%
+  dplyr::select(sort(colnames(length_exp_df))) %>%
+  pivot_longer(cols = starts_with(c("b", "k", "s")),
+               names_to = "id",
+               values_to = "exp") %>%
+  mutate(aligner = str_remove(id, "\\_.*")) %>%
+  mutate(sample_id = str_extract(id, "SRR.*")) %>%
+  dplyr::filter(gc_content < 70) %>%
+  ggplot() +
+  geom_smooth(
+    aes(x = gc_content, y = exp, colour = aligner, fill = aligner)
+    ) +
+  scale_colour_viridis_d() +
+  scale_fill_viridis_d() +
+  labs(x = "GC Content (%)",
+       y = "Transcript Expression (log2 CPM)",
+       fill = "Method",
+       colour = "Method") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black",
+                                  size = 12),
+        axis.text = element_text(colour = "black",
+                                 size = 10))
+
+gc_plot %>%
+  ggsave(filename = "figure5_gc_txp.png",
+         path = here("figures/chapter_figures/"),
+         device = "png",
+         height = 17,
+         width = 20,
+         units = "cm",
+         create.dir = TRUE) 
+
+long_length_plot_cowplot <- long_length_plot +
+  coord_cartesian(ylim = c(2.5, 5)) +
+  theme(legend.position = "none")
+
+gc_plot_cowplot <- gc_plot +
+  labs(y = "") +
+  coord_cartesian(ylim = c(2.5, 5)) +
+  theme(legend.position = "none") 
+
+legend_plot <- cowplot::get_legend(gc_plot)
+
+lengc_cowplot <- cowplot::plot_grid(long_length_plot_cowplot,
+                                    gc_plot_cowplot,
+                                    legend_plot,
+                                    nrow = 1,
+                                    rel_widths = c(1, 1, 0.15),
+                                    labels = c("a.", "b."))
+
+# Must remove legends and re-add using cowplot
+lengc_cowplot %>%
+  ggsave(filename = "figure5_cowplot.png",
+         path = here("figures/chapter_figures/"),
+         device = "png",
+         height = 15,
+         width = 30,
+         units = "cm",
+         create.dir = TRUE)
+```

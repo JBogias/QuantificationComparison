@@ -1,0 +1,61 @@
+services:
+  00_mm_compose:
+    build: ./00_mm_compose
+    image: jbogias/mm-00_mm_compose
+    ports:
+      - "4000:3837"
+  01_Annotations:
+    build: ./01_annotations
+    image: jbogias/mm-01_annotations
+    ports:
+      - "4001:3838"
+  02_DTEList_prep:
+    build: ./02_dtelist_prep
+    image: jbogias/mm-02_dtelist_prep
+    ports:
+      - "4002:3838"
+  03_Filtering:
+    build: ./03_filtering
+    image: jbogias/mm-03_filtering
+    ports:
+      - "4003:3838"
+  04_PCA:
+    build: ./04_pca
+    image: jbogias/mm-04_pca
+    ports:
+      - "4004:3838"
+  05_DTE_DTU:
+    build: ./05_dte_dtu
+    image: jbogias/mm-05_de_dtu
+    ports:
+      - "4005:3838"
+  06_Correlations:
+    build: ./06_correlations
+    image: jbogias/mm-06_cor
+    ports:
+      - "4006:3838"
+  07_multimapping:
+    build: ./07_multimapping
+    image: jbogias/mm-07_mm
+    ports:
+      - "4007:3838"
+  08_kmer_analysis:
+    build: ./08_kmers
+    image: jbogias/mm-08_kmers
+    ports:
+      - "4008:3838"
+  09_Transposons:
+    build: ./09_transposons
+    image: jbogias/mm-09_transposons
+    ports:
+      - "4009:3838"
+  10_plot_anno:
+    build: ./10_plot_anno
+    image: jbogias/mm-10_plot_anno
+    ports:
+      - "4010:3838"
+  11_hub_connectivity:
+    build: ./11_pcbp2
+    image: jbogias/mm-11_pcbp2
+    ports:
+      - "4011:3838"

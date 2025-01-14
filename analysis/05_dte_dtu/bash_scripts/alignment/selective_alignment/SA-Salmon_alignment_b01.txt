@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=32:00:00
+#SBATCH --mem=60GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Load modules
+module load Anaconda3
+
+# Activate Environment
+conda activate tech_chapter
+
+# Run Script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/selective_alignment/SA-Salmon_alignment.sh
+
+# Deactivate environment
+conda deactivate

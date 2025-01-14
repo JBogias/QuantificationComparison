@@ -1,0 +1,49 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+May 13 10:53:26 ..... started STAR run
+May 13 10:53:26 ..... loading genome
+May 13 10:54:14 ..... started mapping
+May 13 11:14:19 ..... finished mapping
+May 13 11:14:20 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21:  5332 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outTmpDir ${dir}/data/alignment/star/temp --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting
+
+EXITING because of fatal ERROR: could not make temporary directory: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/star/temp/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+May 13 11:14:20 ...... FATAL ERROR, exiting

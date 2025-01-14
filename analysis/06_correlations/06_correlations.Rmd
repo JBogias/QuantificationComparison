@@ -1,0 +1,540 @@
+---
+title: "Correlations"
+author: "Justin Bogias"
+date: "2023-09-19"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(stringr)
+library(magrittr)
+library(ggplot2)
+library(edgeR)
+library(cowplot)
+require(VennDiagram)
+library(ggbeeswarm)
+library(tibble)
+library(here)
+```
+
+Some methods will be called "hisat2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+I have also defined several functions here for quality of life purposes
+```{r}
+source(here("R/draw_venn_STAR.R"))
+source(here("R/cor_funcs_variance.R"))
+source(here("R/theme_justin.R"))
+```
+
+# Load Annotations
+```{r}
+gene_txp_anno <- read_csv(here("data/grch38_103_df.csv.gz"))
+
+txp_gene_ensdb_lengths <- read_csv(
+  here("data/txp_gene_ensdb_lengths.csv.gz")
+  )
+
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+```
+
+# Load Data
+```{r}
+hisat2_raw <- read_rds(here("data/salmon_object_hisat2_grch38.rds"))
+kallisto_raw <- read_rds(here("data/kallisto_object_HTR8_grch38_global.rds"))
+salmon_raw <- read_rds(here("data/SA-SalmonObject_HTR8_grch38.rds"))
+star_raw <- read_rds(here("data/salmon_object_star_grch38.rds"))
+
+hisat2_dtelist <- read_rds(here("data/hisat2_dtelist.rds"))
+kallisto_dtelist <- read_rds(here("data/kallisto_dtelist.rds"))
+salmon_dtelist <- read_rds(here("data/sa_dtelist.rds"))
+star_dtelist <- read_rds(here("data/star_dtelist.rds"))
+
+hisat2_loadings <- read_csv(here("data/hisat2_loadings.csv"))
+kallisto_loadings <- read_csv(here("data/kallisto_loadings.csv"))
+salmon_loadings <- read_csv(here("data/salmon_loadings.csv"))
+star_loadings <- read_csv(here("data/star_loadings.csv"))
+```
+
+# Calculate variance
+```{r}
+df_for_var <- function(dge) {
+  df <- dge %>%
+    cpm(log = TRUE) %>%
+    as.data.frame() %>%
+    rownames_to_column("transcript_id") %>%
+    as_tibble()
+  
+  return(df)
+} 
+
+hs2_df <- df_for_var(hisat2_dtelist)
+kal_df <- df_for_var(kallisto_dtelist)
+sal_df <- df_for_var(salmon_dtelist)
+star_df <- df_for_var(star_dtelist)
+
+df <- hs2_df %>%
+  inner_join(kal_df, by = "transcript_id") %>%
+  inner_join(sal_df, by = "transcript_id") %>%
+  inner_join(star_df, by = "transcript_id")
+
+df$rowvar <- apply(df[,-1], 1, var)
+
+most_variant <- df %>%
+  dplyr::arrange(desc(rowvar)) %>%
+  dplyr::select(transcript_id, rowvar)
+
+most_variant %>% 
+  write_csv(here("data/variance_df.csv"))
+
+least_variant <- df %>%
+  dplyr::arrange(rowvar) %>%
+  dplyr::select(transcript_id, rowvar)
+
+top_variant <- most_variant %>% head(200)
+
+bottom_variant <- least_variant %>% head(200)
+```
+
+# Plot Correlations (Figure 3)
+```{r}
+joined_df <- get_joined_samples(w = hisat2_dtelist,
+                                x = kallisto_dtelist,
+                                y = star_dtelist,
+                                z = salmon_dtelist,
+                                method_w = "HISAT2",
+                                method_x = "Kallisto",
+                                method_y = "STAR",
+                                method_z = "Salmon",
+                                sample = 1)
+```
+
+# Check Salmon vs Kallisto GC differences
+```{r}
+difference <- function(x, y) {z <- x-y; return(z)}
+
+joined_df %>%
+   left_join(txp_gene_ensdb_lengths %>% 
+               dplyr::select(tx_id, gc_content),
+             by = c("transcript_id" = "tx_id")) %>% 
+  dplyr::arrange(gc_content) %>%
+  dplyr::select(transcript_id, Kallisto_SRR13401116,
+                Salmon_SRR13401116, gc_content) %>%
+  dplyr::mutate(diff = difference(Kallisto_SRR13401116,
+                                  Salmon_SRR13401116)) %>%
+  ggplot(aes(x = gc_content, y = diff)) +
+  geom_point()
+
+isoform_df <- txp_gene_ensdb_lengths$gene_id %>%
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("gene_id", "isoforms"))
+
+joined_df %>%
+   left_join(txp_gene_ensdb_lengths %>% 
+               dplyr::select(tx_id, gene_id),
+             by = c("transcript_id" = "tx_id")) %>% 
+  left_join(isoform_df,
+            by = "gene_id") %>%
+  dplyr::arrange(desc(isoforms)) %>%
+  dplyr::select(transcript_id, Salmon_SRR13401116,
+                STAR_SRR13401116, isoforms) %>%
+  dplyr::mutate(diff = difference(Salmon_SRR13401116,
+                                  STAR_SRR13401116)) %>%
+  mutate(direction = case_when(diff > 0 ~ "up_salmon",
+                   diff < 0 ~ "up_star",
+                   diff == 0 ~ "equal"),
+         isoform_group = case_when(isoforms >= 16 ~ "Very High",
+                                   isoforms >= 10 ~ "High",
+                                   isoforms >= 6  ~ "Medium",
+                                   isoforms < 6 ~ "Low")) %>%
+  ggplot(aes(x = direction, y = log2(abs(diff)), colour = isoform_group)) +
+  geom_quasirandom() +
+  theme_bw()
+
+isoform_df <- joined_df %>%
+   left_join(txp_gene_ensdb_lengths %>% 
+               dplyr::select(tx_id, gene_id),
+             by = c("transcript_id" = "tx_id")) %>% 
+  left_join(isoform_df,
+            by = "gene_id") %>%
+  dplyr::arrange(desc(isoforms)) %>%
+  dplyr::select(transcript_id, Salmon_SRR13401116,
+                STAR_SRR13401116, isoforms) %>%
+  dplyr::mutate(diff = difference(Salmon_SRR13401116,
+                                  STAR_SRR13401116)) %>%
+  mutate(direction = case_when(diff > 0 ~ "up_salmon",
+                   diff < 0 ~ "up_star",
+                   diff == 0 ~ "equal"),
+         isoform_group = case_when(isoforms >= 16 ~ "Very High",
+                                   isoforms >= 10 ~ "High",
+                                   isoforms >= 6  ~ "Medium",
+                                   isoforms < 6 ~ "Low"))
+
+isoform_df$direction %>% table()
+    # up_star up_salmon 
+    # 22056      3527 
+# Probably can conclude that STAR doesn't do much for isoforms
+
+joined_df %>%
+   inner_join(txp_gene_ensdb_lengths %>% 
+               dplyr::select(tx_id, gene_id),
+             by = c("transcript_id" = "tx_id")) %>% 
+  inner_join(isoform_df,
+            by = c("transcript_id",
+                   "Salmon_SRR13401116",
+                   "STAR_SRR13401116")) %>%
+  dplyr::arrange(desc(isoforms)) %>%
+  dplyr::select(transcript_id, Salmon_SRR13401116,
+                STAR_SRR13401116, isoforms) %>%
+  dplyr::mutate(diff = difference(Salmon_SRR13401116,
+                                  STAR_SRR13401116)) %>%
+  mutate(direction = case_when(diff > 0 ~ "up_salmon",
+                   diff < 0 ~ "up_star",
+                   diff == 0 ~ "equal"),
+         isoform_group = case_when(isoforms >= 16 ~ "Very High",
+                                   isoforms >= 10 ~ "High",
+                                   isoforms >= 6  ~ "Medium",
+                                   isoforms < 6 ~ "Low")) %>%
+  ggplot(aes(x = Salmon_SRR13401116,
+             y = STAR_SRR13401116, 
+             colour = isoform_group)) +
+  geom_point() +
+  scale_color_viridis_d() +
+  theme_bw()
+
+joined_df %>%
+  inner_join(txp_gene_ensdb_lengths %>% 
+               dplyr::select(tx_id, gene_id),
+             by = c("transcript_id" = "tx_id")) %>% 
+  inner_join(isoform_df,
+             by = c("transcript_id", 
+                    "Salmon_SRR13401116",
+                    "STAR_SRR13401116")) %>%
+  dplyr::arrange(desc(isoforms)) %>%
+  dplyr::select(transcript_id, Salmon_SRR13401116,
+                STAR_SRR13401116, isoforms) %>%
+  dplyr::mutate(diff = difference(Salmon_SRR13401116,
+                                  STAR_SRR13401116)) %>%
+  pivot_longer(cols = c("Salmon_SRR13401116",
+                        "STAR_SRR13401116"),
+               names_to = "method",
+               values_to = "counts") %>%
+  ggplot(aes(x = log2(diff), y = isoforms)) +
+  geom_point() +
+  theme_bw()
+```
+
+# Get non-correlated gene and transcripts
+This is defunct now, don't need it
+```{r get_noncor}
+noncor_gtf <- joined_df %>%
+  dplyr::filter(HISAT2_SRR13401116 > 6,
+                Kallisto_SRR13401116 < 3,
+                Salmon_SRR13401116 < 3,
+                STAR_SRR13401116 < 3) %>%
+  dplyr::select(transcript_id) %>%
+  left_join(txp_gene_ensdb_lengths,
+            by = c("transcript_id" = "tx_id"))
+
+noncor_gtf %>%
+  write_csv(here("data/noncor_gtf.csv"))
+
+noncor_ensdb <- joined_df %>%
+  dplyr::filter(HISAT2_SRR13401116 > 6,
+                Kallisto_SRR13401116 < 3,
+                Salmon_SRR13401116 < 3,
+                STAR_SRR13401116 < 3) %>%
+  dplyr::select(transcript_id) %>%
+  left_join(gene_txp_anno,
+            by = "transcript_id")
+
+noncor_ensdb <- noncor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+
+noncor_ensdb %>%
+  write_csv(here("data/noncor_ensbd.csv"))
+```
+
+# Plot correlations with most variant transcripts highlighted
+
+# Most Variant transcripts highlighted
+```{r}
+fig_cor_labs <- plot_cor_cowplot_var(joined_df = joined_df,
+                                     variance_df = most_variant)
+
+ggsave(plot = fig_cor_labs,
+       filename = "figure3_cor_concord_discord.png",
+       path = here("figures/"),
+       units = "cm",
+       height = 42,
+       width = 42)
+```
+
+# Plot correlations with loadings highlighted {.tabset}
+## PC1 negative loadings highlighted
+```{r}
+hisat2_cor_cowplot <- plot_cor_cowplot_loadings(
+  joined_df = joined_df,
+  colour_txps = head(hisat2_loadings$transcript_id, 100)
+  )
+
+hisat2_cor_cowplot
+```
+
+Save the plot
+```{r}
+ggsave(plot = hisat2_cor_cowplot,
+       filename = "cor_HISAT2_SRR13401116.png",
+       path = here("figures/"),
+       units = "cm",
+       height = 42,
+       width = 42)
+```
+
+## PC2 Negative loadings highlighted
+```{r}
+kallisto_cor_cowplot <- plot_cor_cowplot_loadings(
+  joined_df = joined_df,
+  colour_txps = head(kallisto_loadings$transcript_id, 100)
+  )
+
+kallisto_cor_cowplot
+```
+
+Save the plot
+```{r}
+ggsave(plot = kallisto_cor_cowplot,
+       filename = "cor_kallisto_SRR13401116.png",
+       path = here("figures/"),
+       units = "cm",
+       height = 42,
+       width = 42)
+```
+
+## PC2 Positive loadings highlighted
+```{r}
+star_cor_cowplot <- plot_cor_cowplot_loadings(
+  joined_df = joined_df,
+  colour_txps = head(star_loadings$transcript_id, 100)
+  )
+
+star_cor_cowplot
+```
+
+Save the plot
+```{r}
+ggsave(plot = star_cor_cowplot,
+       filename = "cor_STAR_SRR13401116.png",
+       path = here("figures/"),
+       units = "cm",
+       height = 42,
+       width = 42)
+```
+
+## PC1 Positive loadings highlighted
+Or PC5 negative I forget which one
+```{r}
+salmon_cor_cowplot <- plot_cor_cowplot_loadings(
+  joined_df = joined_df,
+  colour_txps = head(salmon_loadings$transcript_id, 100)
+  )
+
+salmon_cor_cowplot
+```
+
+Save the plot
+```{r}
+ggsave(plot = salmon_cor_cowplot,
+       filename = "cor_salmon_SRR13401116.png",
+       path = here("figures/"),
+       units = "cm",
+       height = 42,
+       width = 42)
+```
+
+
+```{r noncor_isoforms}
+noncor_isoform_freq <- gene_txp_anno %>%
+  dplyr::filter(gene_id %in% noncor_ensdb$gene_id,
+                type == "transcript") %>%
+  dplyr::select(gene_name) %>%
+  table() %>%
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("Isoforms", "Frequency")) %>%
+  as_tibble() %>%
+  ggplot() +
+  geom_col(aes(x = Isoforms, y = Frequency),
+           fill = "blue", alpha = 0.8) +
+  scale_y_continuous(limits = c(0 ,9), breaks = c(1,2,3,4,5,6,7,8,9)) +
+  theme_justin() +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank())
+
+ggsave(plot = noncor_isoform_freq,
+       filename = "noncor_isoform_freq.png",
+       path = here("figures/"),
+       units = "cm",
+       height = 20,
+       width = 32)
+
+gene_txp_anno %>%
+  dplyr::filter(transcript_id %in% noncor_ensdb$transcript_id,
+                type == "transcript") %>%
+  dplyr::select(gene_name) %>%
+  table() %>%
+  table()
+```
+
+# Get Unique Transcripts
+## Take raw counts from each
+```{r}
+hisat2_counts <- hisat2_raw$counts %>%
+  set_colnames(paste0("HISAT2_", basename(colnames(hisat2_raw$counts)))) %>%
+  set_rownames(str_remove(rownames(hisat2_raw$counts), "\\..*"))
+
+kallisto_counts <- kallisto_raw$counts %>%
+  set_colnames(paste0("Kallisto_", basename(colnames(kallisto_raw$counts)))) %>%
+  set_rownames(str_remove(rownames(kallisto_raw$counts), "\\..*"))
+
+salmon_counts <- salmon_raw$counts %>%
+  set_colnames(paste0("Salmon_", basename(colnames(salmon_raw$counts)))) %>%
+  set_rownames(str_remove(rownames(salmon_raw$counts), "\\..*"))
+
+star_counts <- star_raw$counts %>%
+  set_colnames(paste0("STAR_", basename(colnames(star_raw$counts))))
+```
+
+## Venn diagram to show inclusion/exclusion
+The venn diagram code was originally written for comparing results from differential expression analyses. Hence, the term DE is applied to the transcripts of interest. Just a semantic artefact.
+```{r}
+incl_all <- intersect(intersect(rownames(hisat2_counts), 
+                                rownames(kallisto_counts)),
+                      intersect(rownames(salmon_counts),
+                                rownames(star_counts)))
+
+hisat2_incl <- hisat2_counts[rowSums(hisat2_counts) > 0, ] %>%
+  rownames() %>%
+  as.data.frame() %>%
+  set_colnames("transcript_id") %>%
+  mutate(DE = TRUE) %>%
+  dplyr::filter(transcript_id %in% incl_all)
+kallisto_incl <- kallisto_counts[rowSums(kallisto_counts) > 0, ] %>%
+  rownames() %>%
+  as.data.frame() %>%
+  set_colnames("transcript_id") %>%
+  mutate(DE = TRUE) %>%
+  dplyr::filter(transcript_id %in% incl_all)
+salmon_incl <- salmon_counts[rowSums(salmon_counts) > 0, ] %>%
+  rownames() %>%
+  as.data.frame() %>%
+  set_colnames("transcript_id") %>%
+  mutate(DE = TRUE) %>%
+  dplyr::filter(transcript_id %in% incl_all)
+star_incl <- star_counts[rowSums(star_counts) > 0, ] %>%
+  rownames() %>%
+  as.data.frame() %>%
+  set_colnames("transcript_id") %>%
+  mutate(DE = TRUE) %>%
+  dplyr::filter(transcript_id %in% incl_all)
+```
+
+```{r}
+venn_incl <- draw_venn(hisat2_res =  hisat2_incl,
+                      kallisto_res = kallisto_incl,
+                      star_res = star_incl,
+                      salmon_res = salmon_incl) %>%
+  as_grob()
+
+venn_incl
+```
+
+## Get Unique Transcripts to each method
+### HISAT2 
+```{r}
+hisat2_unique <- hisat2_incl %>%
+  dplyr::filter(!transcript_id %in% c(kallisto_incl$transcript_id,
+                                      salmon_incl$transcript_id,
+                                      star_incl$transcript_id))
+hisat2_counts[hisat2_unique$transcript_id, ] %>% 
+  rowSums() %>%
+  sort(decreasing = TRUE) %>%
+  head(500) %>%
+  as.data.frame() %>%
+  set_colnames("counts") %>%
+  rownames_to_column(var = "transcript_id") %>%
+  as_tibble() %>%
+  write_csv(here("data/hisat2_unique.csv.gz"))
+```
+
+### Kallisto
+```{r}
+kallisto_unique <- kallisto_incl %>%
+  dplyr::filter(!transcript_id %in% c(hisat2_incl$transcript_id,
+                                      salmon_incl$transcript_id,
+                                      star_incl$transcript_id))
+kallisto_counts[kallisto_unique$transcript_id, ] %>% 
+  rowSums() %>%
+  sort(decreasing = TRUE) %>%
+  head(500) %>%
+  as.data.frame() %>%
+  set_colnames("counts") %>%
+  rownames_to_column(var = "transcript_id") %>%
+  as_tibble() %>%
+  write_csv(here("data/kallisto_unique.csv.gz"))
+```
+
+### Selective Alignment
+```{r}
+salmon_unique <- salmon_incl %>%
+  dplyr::filter(!transcript_id %in% c(kallisto_incl$transcript_id,
+                                      hisat2_incl$transcript_id,
+                                      star_incl$transcript_id))
+salmon_counts[salmon_unique$transcript_id, ] %>% 
+  rowSums() %>%
+  sort(decreasing = TRUE) %>%
+  head(500) %>%
+  as.data.frame() %>%
+  set_colnames("counts") %>%
+  rownames_to_column(var = "transcript_id") %>%
+  as_tibble() %>%
+  write_csv(here("data/salmon_unique.csv.gz"))
+```
+
+### STAR
+```{r}
+star_unique <- star_incl %>%
+  dplyr::filter(!transcript_id %in% c(kallisto_incl$transcript_id,
+                                      salmon_incl$transcript_id,
+                                      hisat2_incl$transcript_id))
+star_counts[star_unique$transcript_id, ] %>% 
+  rowSums() %>%
+  sort(decreasing = TRUE) %>%
+  head(500) %>%
+  as.data.frame() %>%
+  set_colnames("counts") %>%
+  rownames_to_column(var = "transcript_id") %>%
+  as_tibble() %>%
+  write_csv(here("data/star_unique.csv.gz"))
+```

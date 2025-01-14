@@ -1,0 +1,1980 @@
+---
+title: "Principal Component Analysis"
+author: "Justin Bogias"
+date: "2024-08-18"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(stringr)
+library(magrittr)
+library(tibble)
+library(ggplot2)
+library(viridis)
+library(PCAtools)
+library(pheatmap)
+library(cowplot)
+library(ggbeeswarm)
+library(edgeR)
+library(here)
+```
+
+Some methods will be called "hisat2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+# Load Annotations
+I have also defined several functions here for quality of life purposes
+```{r}
+source(here("R/cor_funcs.R"))
+source(here("R/theme_justin.R"))
+
+gene_txp_anno <- read_csv(here("data/grch38_103_df.csv.gz"))
+
+txp_gene_ensdb_lengths <- read_csv(
+  here("data/txp_gene_ensdb_lengths.csv.gz")
+  )
+
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+```
+
+# Load Counts
+```{r}
+hisat2_dtelist <- read_rds(here("data/hisat2_dtelist.rds"))
+kallisto_dtelist <- read_rds(here("data/kallisto_dtelist.rds"))
+star_dtelist <- read_rds(here("data/star_dtelist.rds"))
+salmon_dtelist <- read_rds(here("data/sa_dtelist.rds"))
+```
+
+# Join all samples
+## Variance Calculation and Join
+This data frame was made by running the `get_joined_samples` function 8 times and then joining the results all together.
+```{r}
+hs2_df <- df_for_var(hisat2_dtelist)
+kal_df <- df_for_var(kallisto_dtelist)
+sal_df <- df_for_var(salmon_dtelist)
+star_df <- df_for_var(star_dtelist)
+
+df <- hs2_df %>%
+  inner_join(kal_df, by = "transcript_id") %>%
+  inner_join(sal_df, by = "transcript_id") %>%
+  inner_join(star_df, by = "transcript_id")
+
+df$rowvar <- apply(df[,-1], 1, var)
+```
+
+## Get Most Variable
+```{r}
+most_variant <- df %>%
+  dplyr::arrange(desc(rowvar)) %>%
+  dplyr::select(transcript_id, rowvar)
+
+most_variant %>% 
+  write_csv(here("data/variance_df.csv"))
+```
+
+## Get Least Variable
+```{r}
+least_variant <- df %>%
+  dplyr::arrange(rowvar) %>%
+  dplyr::select(transcript_id, rowvar)
+
+top_variant <- most_variant %>% head(200)
+
+bottom_variant <- least_variant %>% head(200)
+```
+
+## Join all samples and methods
+This joins datasets from each method for one sample and then runs it repeatedly across all samples
+```{r}
+all_samples_df <- get_joined_samples(w = hisat2_dtelist,
+                                     x = kallisto_dtelist,
+                                     y = star_dtelist,
+                                     z = salmon_dtelist,
+                                     method_w = "HISAT2",
+                                     method_x = "Kallisto",
+                                     method_y = "STAR",
+                                     method_z = "Salmon",
+                                     sample = 1)
+
+for(i in 2:8) {
+  joined_df <- get_joined_samples(w = hisat2_dtelist,
+                                  x = kallisto_dtelist,
+                                  y = star_dtelist,
+                                  z = salmon_dtelist,
+                                  method_w = "HISAT2",
+                                  method_x = "Kallisto",
+                                  method_y = "STAR",
+                                  method_z = "Salmon",
+                                  sample = i)
+  
+  all_samples_df <- inner_join(all_samples_df, joined_df,
+                               by = "transcript_id")
+}
+```
+
+Load dgelists for later analysis
+
+# Principal Component Analysis
+
+A principal component analysis measures the origin of variance in the data, whether it be biological or technical. The analysis allows for the correlation of the observed variance with any variable of interest. If we see that the samples are able to separate by method then we might be able to conclude that there are technical differences between methods. However we must pay attention to the axe, are the distances between groups great or small?
+
+## Construct metadata
+```{r meta_df}
+meta_df <- all_samples_df %>%
+  dplyr::select(-transcript_id) %>%
+  colnames() %>%
+  as.data.frame() %>%
+  set_colnames("sample_id") %>%
+  mutate(method = str_remove(sample_id, "_.*"),
+         sample = str_remove(sample_id, ".*_"),
+         Condition = case_when(
+           sample %in% c("SRR13401116", "SRR13401117",
+                         "SRR13401118", "SRR13401119") ~ "control",
+           sample %in% c("SRR13401120", "SRR13401121",
+                         "SRR13401122", "SRR13401123") ~ "knockout"
+         ),
+         HISAT2 = case_when(
+           method == "HISAT2" ~ 1,
+           method != "HISAT2" ~ 0
+         ),
+         Salmon = case_when(
+           method == "Salmon" ~ 1,
+           method != "Salmon" ~ 0
+         ),
+         Kallisto = case_when(
+           method == "Kallisto" ~ 1,
+           method != "Kallisto" ~ 0
+         ),
+         STAR = case_when(
+           method == "STAR" ~ 1,
+           method != "STAR" ~ 0
+         ))
+```
+
+## Get PCA object individual methods {.tabset}
+Here we generate the PCA object, PCA biplot, and eigen-correlation plot.
+- The PCA object simply generates the loadings and rotations for the PCA. The loadings represent features (genes or transcripts) that contribute to the Principal Components (PCs), each contributing a different amount to each PC.
+- The biplot shows the contribution of different PCs to each sample, in either a positive or negative direction (with positive meaning positively correlated and negative meaning negatively correlated)
+- The eigen-correlation plot shows each variable in the metadata and its own correlation (positive or negative) with each PC
+
+First we'll run these steps on each group (by methods) individually before we combine them.
+Combining them won't introduce any extra variability as these are from the same 8 samples, just aligned with a different method each time. The quantification is largely consistent, except for Kallisto, but that does the same thing as Salmon
+### HISAT2
+Create the PCA object to be used for plotting
+```{r hisat2_PCA}
+hisat2_df <- all_samples_df %>%
+  dplyr::select(transcript_id, starts_with("HISAT2"))
+hisat2_meta <- meta_df %>% dplyr::filter(method == "HISAT2")
+
+hisat2_pnarm <- pca(
+  hisat2_df %>% column_to_rownames("transcript_id"),
+  hisat2_meta %>% column_to_rownames("sample_id"),
+  removeVar = 0.2
+)
+```
+
+Plot PCA Biplot for HISAT2
+```{r}
+pcx <- "PC1"
+pcy <- "PC2"
+
+hisat2_PCA <- hisat2_pnarm$rotated %>% 
+  as.data.frame() %>%
+  rownames_to_column("sample_id") %>%
+  left_join(hisat2_meta,
+            by = "sample_id") %>%
+  ggplot(aes(x = .data[[pcx]],
+             y = .data[[pcy]],
+             shape = Condition)) +
+  geom_point(size = 4,
+             colour = "darkblue") +
+  scale_colour_viridis_d() +
+  labs(x = paste0(pcx, ": ", round(hisat2_pnarm$variance[[pcx]], 2), "%"),
+       y = paste0(pcy, ": ", round(hisat2_pnarm$variance[[pcy]], 2), "%"),
+       shape = "Condition",
+       colour = "Method") +
+  theme_bw()
+
+ggsave(plot = hisat2_PCA,
+       filename = "hisat2_PCA.png",
+       device = "png",
+       path = here("figures/"),
+       height = 8,
+       width = 10,
+       units = "cm",
+       dpi = 300)
+
+hisat2_PCA
+```
+
+Generate eigen-correlation plot
+```{r}
+eigencorplot(hisat2_pnarm,
+             components = getComponents(hisat2_pnarm, seq_len(5)),
+             metavars = c("Condition", "sample"),
+             col = c("blue", "cornflowerblue", "white", "red", "darkred"),
+             cexCorval = 1,
+             colCorval = "black",
+             fontCorval = 2,
+             titleX = "HISAT2 Principal Components")
+
+```
+
+### Kallisto
+Create a PCA object for Kallisto
+```{r kallisto_PCA}
+kallisto_df <- all_samples_df %>% 
+  dplyr::select(transcript_id, starts_with("Kallisto"))
+kallisto_meta <- meta_df %>% dplyr::filter(method == "Kallisto")
+
+kallisto_pnarm <- pca(
+  kallisto_df %>% column_to_rownames("transcript_id"),
+  kallisto_meta %>% column_to_rownames("sample_id"),
+  removeVar = 0.2
+)
+```
+
+Plot and save PCA biplot
+```{r}
+kallisto_PCA <- kallisto_pnarm$rotated %>% 
+  as.data.frame() %>%
+  rownames_to_column("sample_id") %>%
+  left_join(kallisto_meta,
+            by = "sample_id") %>%
+  ggplot(aes(x = .data[[pcx]],
+             y = .data[[pcy]],
+             shape = Condition)) +
+  geom_point(size = 4,
+             colour = "darkblue") +
+  scale_colour_viridis_d() +
+  labs(x = paste0(pcx, ": ", round(kallisto_pnarm$variance[[pcx]], 2), "%"),
+       y = paste0(pcy, ": ", round(kallisto_pnarm$variance[[pcy]], 2), "%"),
+       shape = "Condition",
+       colour = "Method") +
+  theme_bw()
+
+ggsave(plot = kallisto_PCA,
+       filename = "kallisto_PCA.png",
+       device = "png",
+       path = here("figures/"),
+       height = 8,
+       width = 10,
+       units = "cm",
+       dpi = 300)
+
+kallisto_PCA
+```
+
+Generate eigen-correlation plot
+```{r}
+eigencorplot(kallisto_pnarm,
+             components = getComponents(kallisto_pnarm, seq_len(5)),
+             metavars = c("Condition", "sample"),
+             col = c("blue", "cornflowerblue", "white", "red", "darkred"),
+             cexCorval = 1,
+             colCorval = "black",
+             fontCorval = 2,
+             titleX = "Kallisto Principal Components")
+```
+
+### Salmon
+Generate PCA object
+```{r salmon_PCA}
+salmon_df <- all_samples_df %>%
+  dplyr::select(transcript_id, starts_with("Salmon"))
+salmon_meta <- meta_df %>% dplyr::filter(method == "Salmon")
+
+salmon_pnarm <- pca(
+  salmon_df %>% column_to_rownames("transcript_id"),
+  salmon_meta %>% column_to_rownames("sample_id"),
+  removeVar = 0.2
+)
+```
+
+Generate Salmon PCA biplot
+```{r}
+salmon_PCA <- salmon_pnarm$rotated %>% 
+  as.data.frame() %>%
+  rownames_to_column("sample_id") %>%
+  left_join(salmon_meta,
+            by = "sample_id") %>%
+  ggplot(aes(x = .data[[pcx]],
+             y = .data[[pcy]],
+             shape = Condition)) +
+  geom_point(size = 4,
+             colour = "darkblue") +
+  scale_colour_viridis_d() +
+  labs(x = paste0(pcx, ": ", round(salmon_pnarm$variance[[pcx]], 2), "%"),
+       y = paste0(pcy, ": ", round(salmon_pnarm$variance[[pcy]], 2), "%"),
+       shape = "Condition",
+       colour = "Method") +
+  theme_bw()
+
+ggsave(plot = salmon_PCA,
+       filename = "salmon_PCA.png",
+       device = "png",
+       path = here("figures/"),
+       height = 8,
+       width = 10,
+       units = "cm",
+       dpi = 300)
+
+salmon_PCA
+```
+
+Now create the eigencor plot
+```{r}
+eigencorplot(salmon_pnarm,
+             components = getComponents(salmon_pnarm, seq_len(5)),
+             metavars = c("Condition", "sample"),
+             col = c("blue", "cornflowerblue", "white", "red", "darkred"),
+             cexCorval = 1,
+             colCorval = "black",
+             fontCorval = 2,
+             titleX = "Salmon Principal Component")
+```
+
+### STAR
+Create PCA object
+```{r sa_PCA}
+star_df <- all_samples_df %>% 
+  dplyr::select(transcript_id, starts_with("STAR_"))
+star_meta <- meta_df %>% dplyr::filter(method == "STAR")
+
+star_pnarm <- pca(
+  star_df %>% column_to_rownames("transcript_id"),
+  star_meta %>% column_to_rownames("sample_id"),
+  removeVar = 0.2
+)
+```
+
+Now create the figure and save
+```{r}
+star_PCA <- star_pnarm$rotated %>% 
+  as.data.frame() %>%
+  rownames_to_column("sample_id") %>%
+  left_join(star_meta,
+            by = "sample_id") %>%
+  ggplot(aes(x = .data[[pcx]],
+             y = .data[[pcy]],
+             shape = Condition)) +
+  geom_point(size = 4,
+             colour = "darkblue") +
+  scale_colour_viridis_d() +
+  labs(x = paste0(pcx, ": ", round(star_pnarm$variance[[pcx]], 2), "%"),
+       y = paste0(pcy, ": ", round(star_pnarm$variance[[pcy]], 2), "%"),
+       shape = "Condition",
+       colour = "Method") +
+  theme_bw()
+
+ggsave(plot = star_PCA,
+       filename = "star_PCA.png",
+       device = "png",
+       path = here("figures/"),
+       height = 8,
+       width = 10,
+       units = "cm",
+       dpi = 300)
+```
+
+Get the eigen-correlations
+```{r}
+eigencorplot(star_pnarm,
+             components = getComponents(star_pnarm, seq_len(5)),
+             metavars = c("Condition", "sample"),
+             col = c("blue", "cornflowerblue", "white", "red", "darkred"),
+             cexCorval = 1,
+             colCorval = "black",
+             fontCorval = 2,
+             titleX = "STAR Principal Components")
+```
+
+## Get PCA object all samples
+
+First we need to create the metadata
+```{r}
+ids <- colnames(all_samples_df)[-1]
+aligner <- c(rep("HISAT2", 8),
+             rep("Salmon", 8),
+             rep("STAR", 8),
+             rep("Kallisto", 8))
+
+sample_rep <- rep(
+  colnames(all_samples_df)[str_detect(colnames(all_samples_df),
+                                      "HISAT2")] %>%
+    str_remove("HISAT2_"), 4)
+condition <- rep(c(rep("control", 4), rep("KO", 4)), 4)
+
+sample_metadata <- tibble(ids, aligner, sample_rep, condition)
+```
+
+And here we can make the PCA object
+```{r}
+p_narm <- pca(
+  all_samples_df %>% column_to_rownames("transcript_id"),
+  sample_metadata %>% column_to_rownames("ids"),
+  removeVar = 0.2
+)
+
+```
+
+```{r}
+all_samples_df_names <- all_samples_df %>%
+  left_join(gene_txp_anno %>%
+              dplyr::select(transcript_id),
+            by = "transcript_id")
+
+p_narm <- pca(
+  all_samples_df %>% column_to_rownames("transcript_id"),
+  meta_df %>% column_to_rownames("sample_id"),
+  removeVar = 0.2
+)
+
+pcx <- "PC1"
+pcy <- "PC2"
+
+pc1_2_plot <- p_narm$rotated %>% 
+  as.data.frame() %>%
+  rownames_to_column("sample_id") %>%
+  left_join(meta_df,
+            by = "sample_id") %>%
+  ggplot(aes(x = .data[[pcx]],
+             y = .data[[pcy]],
+             colour = method,
+             shape = Condition)) +
+  geom_point(size = 4
+  ) +
+  scale_colour_viridis_d() +
+  labs(x = paste0(pcx, ": ", round(p_narm$variance[[pcx]], 2), "%"),
+       y = paste0(pcy, ": ", round(p_narm$variance[[pcy]], 2), "%"),
+       shape = "Condition",
+       colour = "Method") +
+  theme_bw()
+
+ggsave(plot = pc1_2_plot,
+       filename = "figure2_PC1_PC2.png",
+       path = here("figures/"),
+       height = 15,
+       width = 17,
+       units = "cm",
+       dpi = 300)
+
+pcx <- "PC3"
+pcy <- "PC4"
+
+text_df <- p_narm$rotated %>%
+  as.data.frame() %>%
+  dplyr::filter(PC4 < -25) %>%
+  rownames_to_column("sample_id") %>%
+  left_join(meta_df,
+            by = "sample_id")
+
+pc_plot <- p_narm$rotated %>% 
+  as.data.frame() %>%
+  rownames_to_column("sample_id") %>%
+  left_join(meta_df,
+            by = "sample_id")
+
+pc3_4_plot <- pc_plot %>%
+  ggplot(aes(x = .data[[pcx]],
+             y = .data[[pcy]],
+             colour = method,
+             shape = Condition)) +
+  geom_point(size = 4) +
+  scale_colour_viridis_d() +
+  labs(x = paste0(pcx, ": ", round(p_narm$variance[[pcx]], 2), "%"),
+       y = paste0(pcy, ": ", round(p_narm$variance[[pcy]], 2), "%"),
+       shape = "Condition",
+       colour = "Method") +
+  geom_label_repel(data = pc_plot %>% dplyr::filter(PC4 < -13.5),
+                   aes(label = sample),
+                   colour = c("#011666", "#b2af11", "darkgreen",
+                              "#011666", "#b2af11", "darkgreen", "darkgreen"),
+                   box.padding = 0.8) +
+  theme_bw()
+
+ggsave(plot = pc3_4_plot,
+       filename = "figure2_PC3_PC4.png",
+       path = here("figures/"),
+       height = 15,
+       width = 17,
+       units = "cm",
+       dpi = 300)
+
+eigencorplot(p_narm,
+             components = getComponents(p_narm, seq_len(5)),
+             metavars = c("Condition", "HISAT2", "Salmon",
+                          "STAR", "Kallisto"),
+             col = c("blue", "cornflowerblue", "white", "red", "darkred"),
+             cexCorval = 1,
+             colCorval = "black",
+             fontCorval = 2)
+
+p_narm_copy <- p_narm
+
+# Need to make my own annotations for this
+p_narm_copy$loadings <- p_narm_copy$loadings %>%
+  as.data.frame() %>% 
+  rownames_to_column("transcript_id") %>%
+  left_join(transcript_key %>%
+              dplyr::select(transcript_id, transcript_name),
+            by = "transcript_id") %>%
+  dplyr::mutate(
+    transcript_name = make.names(transcript_name, unique = TRUE),
+    transcript_name = str_replace(transcript_name, "NA..29$", "LDHA.236"),
+    transcript_name = str_replace(transcript_name, "NA..2$", "SMN2.231"),
+    transcript_name = str_replace(transcript_name, "NA..4$", "CEP170.227"),
+    transcript_name = str_replace(transcript_name, "\\.", "-")
+  ) %>%
+  column_to_rownames("transcript_name")
+
+plotloadings(p_narm_copy)
+
+  #dplyr::filter(!is.na(transcript_name)) %>%
+  #dplyr::filter(str_detect(transcript_name, "NA"))
+# Three missing NA..2 is SMN2-231, NA..4 is CEP170-227, NA..29 is LDHA-236
+```
+
+## Eigen Correlation Plot
+```{r}
+eigencor_methods <- eigencorplot(p_narm,
+                                 metavars = c("sample",
+                                              "Condition",
+                                              "HISAT2",
+                                              "Kallisto",
+                                              "Salmon",
+                                              "STAR"))
+
+eigencor_methods %>%
+  as_grob() %>%
+  ggsave(filename = "eigencor_methods.png",
+         path = here("figures/"),
+         device = "png",
+         height = 10,
+         width = 30,
+         units = "cm")
+```
+
+# Retrieve Loadings {.tabset}
+The principal component loadings tell us how much each gene is contributing to a principal component. This means that if a principal component is correlated with the usage of a specific method, a gene that contributes a large portion of that variation might be meaningful in understanding where these technical biases arise. This also opens the possibility of comparing genes that have a high contribution with those with low contributions. It essentially offers quantified amounts that can assist in our understanding, which offers a benefit over comparing simply what genes were found, and what genes weren't 
+```{r}
+pca_obj <- p_narm
+```
+
+## PC1 positive - Down in HISAT2 (up in others)
+
+```{r}
+pos_loadings_pc1 <- pca_obj$loadings %>%
+  dplyr::select(PC1) %>%
+  dplyr::arrange(desc(PC1)) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(pos_loadings_pc1, n = 100) %>%
+  write_csv(here("data/pc1_top_pos_loadings.csv.gz"))
+
+pc1_transcripts_pos <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% pos_loadings_pc1$transcript_name) %>%
+  left_join(pos_loadings_pc1 %>%
+              dplyr::select(-"PC1"),
+            by = c("transcript_name", "transcript_id"))
+
+pc1_info_pos <- txp_gene_ensdb_lengths %>% 
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc1_transcripts_pos$transcript_id)
+
+pc1_info_pos$transcript_length %>% summary()
+pc1_info_pos$gc_content %>% summary()
+pc1_info_pos$tx_biotype %>% table()
+pc1_info_pos$seqnames %>% as.character() %>% table()
+```
+
+## PC1 negative - Up in HISAT2
+```{r}
+neg_loadings_pc1 <- pca_obj$loadings %>%
+  dplyr::select(PC1) %>%
+  dplyr::arrange(PC1) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(neg_loadings_pc1, n = 100) %>%
+  write_csv(here("data/pc1_top_neg_loadings.csv.gz"))
+
+pc1_transcripts_neg <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% neg_loadings_pc1$transcript_name) %>%
+  left_join(neg_loadings_pc1 %>%
+              dplyr::select(-"PC1"),
+            by = c("transcript_name", "transcript_id"))
+
+pc1_info_neg <- txp_gene_ensdb_lengths %>% 
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc1_transcripts_neg$transcript_id)
+
+pc1_info_neg$transcript_length %>% summary()
+pc1_info_neg$gc_content %>% summary()
+pc1_info_neg$tx_biotype %>% table()
+pc1_info_neg$seqnames %>% as.character() %>% table()
+```
+
+## PC2 postive - Down in STAR (Up in Kallisto)
+```{r}
+pos_loadings_pc2 <- pca_obj$loadings %>%
+  dplyr::select(PC2) %>%
+  dplyr::arrange(desc(PC2)) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(pos_loadings_pc2, n = 100) %>%
+  write_csv(here("data/pc2_top_pos_loadings.csv.gz"))
+
+pc2_transcripts_pos <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% pos_loadings_pc2$transcript_name) %>%
+  left_join(pos_loadings_pc2 %>%
+              dplyr::select(-"PC2"),
+            by = c("transcript_name", "transcript_id"))
+
+pc2_info_pos <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc2_transcripts_pos$transcript_id)
+
+pc2_info_pos$transcript_length %>% summary()
+pc2_info_pos$gc_content %>% summary()
+pc2_info_pos$tx_biotype %>% table()
+pc2_info_pos$seqnames %>% as.character() %>% table()
+```
+
+## PC2 negative - Up in STAR (Down in Kallisto)
+```{r}
+neg_loadings_pc2 <- pca_obj$loadings %>%
+  dplyr::select(PC2) %>%
+  dplyr::arrange(PC2) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(neg_loadings_pc2, n = 100) %>%
+  write_csv(here("data/pc2_top_neg_loadings.csv.gz"))
+
+pc2_transcripts_neg <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% neg_loadings_pc2$transcript_name) %>%
+  left_join(neg_loadings_pc2 %>%
+              dplyr::select(-"PC2"),
+            by = c("transcript_name", "transcript_id"))
+
+pc2_info_neg <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc2_transcripts_neg$transcript_id)
+
+pc2_info_neg$transcript_length %>% summary()
+pc2_info_neg$gc_content %>% summary()
+pc2_info_neg$tx_biotype %>% table()
+pc2_info_neg$seqnames %>% as.character() %>% table()
+```
+
+## PC3 - Control vs KO
+```{r}
+loadings_pc3 <- pca_obj$loadings %>%
+  dplyr::select(PC3) %>%
+  dplyr::arrange(desc(abs(PC3))) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(loadings_pc3, n = 100) %>%
+  write_csv(here("data/pc3_top_loadings.csv.gz"))
+
+pc3_transcripts <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% loadings_pc3$transcript_name) %>%
+  left_join(loadings_pc3 %>%
+              dplyr::select(-"PC3"),
+            by = c("transcript_name", "transcript_id"))
+
+pc3_info <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc3_transcripts$transcript_id)
+
+pc3_info$transcript_length %>% summary()
+pc3_info$gc_content %>% summary()
+pc3_info$tx_biotype %>% table()
+pc3_info$seqnames %>% as.character() %>% table()
+```
+
+## PC4 - Sample SRR13401118
+```{r}
+loadings_pc4 <- pca_obj$loadings %>%
+  dplyr::select(PC4) %>%
+  dplyr::arrange(desc(abs(PC4))) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(loadings_pc4, n = 100) %>%
+  write_csv(here("data/pc4_top_loadings.csv.gz"))
+
+pc4_transcripts <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% loadings_pc4$transcript_name) %>%
+  left_join(loadings_pc4 %>%
+              dplyr::select(-"PC4"),
+            by = c("transcript_name", "transcript_id"))
+
+pc4_info <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc3_transcripts$transcript_id)
+
+pc4_info$transcript_length %>% summary()
+pc4_info$gc_content %>% summary()
+pc4_info$tx_biotype %>% table()
+pc4_info$seqnames %>% as.character() %>% table()
+```
+
+## PC5 postive - Up in Salmon 
+```{r}
+pos_loadings_pc5 <- pca_obj$loadings %>%
+  dplyr::select(PC5) %>%
+  dplyr::arrange(desc(PC5)) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(pos_loadings_pc5, n = 100) %>%
+  write_csv(here("data/pc5_top_pos_loadings.csv.gz"))
+
+pc5_transcripts_pos <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% pos_loadings_pc5$transcript_name) %>%
+  left_join(pos_loadings_pc5 %>%
+              dplyr::select(-"PC5"),
+            by = c("transcript_name", "transcript_id"))
+
+pc5_info_pos <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc5_transcripts_pos$transcript_id)
+
+pc5_info_pos$transcript_length %>% summary()
+pc5_info_pos$gc_content %>% summary()
+pc5_info_pos$tx_biotype %>% table()
+pc5_info_pos$seqnames %>% as.character() %>% table()
+```
+
+## PC5 negative - Down in Salmon 
+```{r}
+neg_loadings_pc5 <- pca_obj$loadings %>%
+  dplyr::select(PC5) %>%
+  dplyr::arrange(PC5) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(neg_loadings_pc5, n = 100) %>%
+  write_csv(here("data/pc5_top_neg_loadings.csv.gz"))
+
+pc5_transcripts_neg <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% neg_loadings_pc5$transcript_name) %>%
+  left_join(neg_loadings_pc5 %>%
+              dplyr::select(-"PC5"),
+            by = c("transcript_name", "transcript_id"))
+
+pc5_info_neg <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc5_transcripts_neg$transcript_id)
+
+pc5_info_neg$transcript_length %>% summary()
+pc5_info_neg$gc_content %>% summary()
+pc5_info_neg$tx_biotype %>% table()
+pc5_info_neg$seqnames %>% as.character() %>% table()
+```
+
+## PC6 postive - Up in Salmon 
+```{r}
+pos_loadings_pc6 <- pca_obj$loadings %>%
+  dplyr::select(PC6) %>%
+  dplyr::arrange(desc(PC6)) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(pos_loadings_pc6, n = 100) %>%
+  write_csv(here("data/pc6_top_pos_loadings.csv.gz"))
+
+pc6_transcripts_pos <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% pos_loadings_pc6$transcript_name) %>%
+  left_join(pos_loadings_pc6 %>%
+              dplyr::select(-"PC6"),
+            by = c("transcript_name", "transcript_id"))
+
+pc6_info_pos <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc6_transcripts_pos$transcript_id)
+
+pc6_info_pos$transcript_length %>% summary()
+pc6_info_pos$gc_content %>% summary()
+pc6_info_pos$tx_biotype %>% table()
+pc6_info_pos$seqnames %>% as.character() %>% table()
+```
+
+## PC6 negative - Down in Salmon 
+```{r}
+neg_loadings_pc6 <- pca_obj$loadings %>%
+  dplyr::select(PC6) %>%
+  dplyr::arrange(PC6) %>%
+  dplyr::mutate(rank = 1:dim(pca_obj$loadings)[1]) %>%
+  rownames_to_column("transcript_id") %>%
+  left_join(dplyr::select(gene_txp_anno, "transcript_id", 
+                          "transcript_name"),
+            by = "transcript_id")
+
+head(neg_loadings_pc6, n = 100) %>%
+  write_csv(here("data/pc6_top_neg_loadings.csv.gz"))
+
+pc6_transcripts_neg <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript",
+                transcript_name %in% neg_loadings_pc6$transcript_name) %>%
+  left_join(neg_loadings_pc6 %>%
+              dplyr::select(-"PC6"),
+            by = c("transcript_name", "transcript_id"))
+
+pc6_info_neg <- txp_gene_ensdb_lengths %>%
+  as.data.frame() %>%
+  dplyr::filter(tx_id %in% pc6_transcripts_neg$transcript_id)
+
+pc6_info_neg$transcript_length %>% summary()
+pc6_info_neg$gc_content %>% summary()
+pc6_info_neg$tx_biotype %>% table()
+pc6_info_neg$seqnames %>% as.character() %>% table()
+```
+
+# Save PCA object
+```{r}
+pca_obj %>%
+  write_rds(here("data/pca_obj.rds"))
+```
+
+# Top Loadings Analysis
+Now that we have these loadings we can begin to interrogate them and find their secrets on why they contribute to differences between methods
+## Define matrix creation functions
+```{r}
+get_mat_cpms <- function(x, method, pc_txp, n = 200) {
+  mat <- cpm(x,
+             log = TRUE) %>%
+    as.data.frame() %>%
+    rownames_to_column("transcript_id") %>%
+    inner_join(pc_txp %>%
+                dplyr::select("transcript_id",
+                              "transcript_name",
+                              "rank"),
+              by = "transcript_id") %>%
+    dplyr::arrange(rank) %>%
+    dplyr::filter(rank <= n) %>%
+    column_to_rownames("transcript_name") %>%
+    dplyr::select(-transcript_id,
+                  -rank) %>%
+    t() %>%
+    as.data.frame() %>%
+    rownames_to_column("id") %>%
+    dplyr::mutate(id = str_replace(id, "SRR", paste0(method, "_SRR"))) %>%
+    column_to_rownames("id") %>%
+    as.matrix()
+
+  return(mat)
+}
+
+get_mat <- function(x, pc_txp, n = 200) {
+  x %>%
+    as.data.frame() %>%
+    inner_join(pc_txp %>%
+                 dplyr::select("transcript_id",
+                               "transcript_name",
+                               "rank"),
+               by = "transcript_id") %>%
+    dplyr::arrange(rank) %>%
+    dplyr::filter(rank <= n) %>%
+    column_to_rownames("transcript_name") %>%
+    dplyr::select(-transcript_id,
+                  -rank) %>%
+    t() %>%
+    as.data.frame()
+}
+
+get_mat_method <- function(x, method, pc_txp, n = 200) {
+  x %>%
+    as.data.frame() %>%
+    inner_join(pc_txp %>%
+                 dplyr::select("transcript_id",
+                               "transcript_name",
+                               "rank"),
+               by = c("transcript_id", "transcript_name")) %>%
+    dplyr::arrange(rank) %>%
+    dplyr::filter(rank <= n) %>%
+    column_to_rownames("transcript_name") %>%
+    dplyr::select(-transcript_id,
+                  -rank) %>%
+    t() %>%
+    as.data.frame() %>%
+    rownames_to_column("id") %>%
+    dplyr::mutate(id = str_replace(id, "SRR", paste0(method, "_SRR"))) %>%
+    column_to_rownames("id") %>%
+    as.matrix()
+}
+```
+
+## Get top loadings from the PCs explored before
+```{r}
+cutoff <- 500
+
+matrix_pc1_pos <- get_mat(all_samples_df, pc1_transcripts_pos, n = cutoff)
+matrix_pc1_neg <- get_mat(all_samples_df, pc1_transcripts_neg, n = cutoff)
+matrix_pc2_pos <- get_mat(all_samples_df, pc2_transcripts_pos, n = cutoff)
+matrix_pc2_neg <- get_mat(all_samples_df, pc2_transcripts_neg, n = cutoff)
+matrix_pc3 <- get_mat(all_samples_df, pc3_transcripts, n = cutoff)
+matrix_pc4 <- get_mat(all_samples_df, pc4_transcripts, n = cutoff)
+matrix_pc5_pos <- get_mat(all_samples_df, pc5_transcripts_pos, n = cutoff)
+matrix_pc5_neg <- get_mat(all_samples_df, pc5_transcripts_neg, n = cutoff)
+matrix_pc6_pos <- get_mat(all_samples_df, pc6_transcripts_pos, n = cutoff)
+matrix_pc6_neg <- get_mat(all_samples_df, pc6_transcripts_neg, n = cutoff)
+```
+
+## Retrieve the loadings from counts {.tabset}
+### HISAT2 top loadings
+```{r}
+cutoff <- 500
+
+hisat2_matrix_pc1_pos <- get_mat_method(hisat2_dtelist, "hisat2",
+                                        pc1_transcripts_pos, n = cutoff)
+hisat2_matrix_pc1_neg <- get_mat_method(hisat2_dtelist, "hisat2",
+                                        pc1_transcripts_neg, n = cutoff)
+hisat2_matrix_pc2_pos <- get_mat_method(hisat2_dtelist, "hisat2",
+                                        pc2_transcripts_pos,  n = cutoff)
+hisat2_matrix_pc2_neg <- get_mat_method(hisat2_dtelist, "hisat2",
+                                        pc2_transcripts_neg,  n = cutoff)
+hisat2_matrix_pc3 <- get_mat_method(hisat2_dtelist, "hisat2",
+                                    pc3_transcripts,  n = cutoff)
+hisat2_matrix_pc4 <- get_mat_method(hisat2_dtelist, "hisat2",
+                                    pc4_transcripts,  n = cutoff)
+hisat2_matrix_pc5_pos <- get_mat_method(hisat2_dtelist, "hisat2",
+                                        pc5_transcripts_pos,  n = cutoff)
+hisat2_matrix_pc5_neg <- get_mat_method(hisat2_dtelist, "hisat2",
+                                        pc5_transcripts_neg,  n = cutoff)
+```
+
+### Kallisto top loadings
+```{r}
+cutoff <- 500
+
+kallisto_matrix_pc1_pos <- get_mat_method(kallisto_dtelist, "kallisto",
+                                          pc1_transcripts_pos, n = cutoff)
+kallisto_matrix_pc1_neg <- get_mat_method(kallisto_dtelist, "kallisto",
+                                          pc1_transcripts_neg,  n = cutoff)
+kallisto_matrix_pc2_pos <- get_mat_method(kallisto_dtelist, "kallisto",
+                                          pc2_transcripts_pos,  n = cutoff)
+kallisto_matrix_pc2_neg <- get_mat_method(kallisto_dtelist, "kallisto",
+                                          pc2_transcripts_neg,  n = cutoff)
+kallisto_matrix_pc3 <- get_mat_method(kallisto_dtelist, "kallisto",
+                                      pc3_transcripts,  n = cutoff)
+kallisto_matrix_pc4 <- get_mat_method(kallisto_dtelist, "kallisto",
+                                      pc4_transcripts,  n = cutoff)
+kallisto_matrix_pc5_pos <- get_mat_method(kallisto_dtelist, "kallisto",
+                                          pc5_transcripts_pos,  n = cutoff)
+kallisto_matrix_pc5_neg <- get_mat_method(kallisto_dtelist, "kallisto",
+                                          pc5_transcripts_neg,  n = cutoff)
+```
+
+### STAR top loadings
+```{r}
+cutoff <- 500
+
+star_matrix_pc1_pos <- get_mat_method(star_dtelist, "star",
+                                      pc1_transcripts_pos,  n = cutoff)
+star_matrix_pc1_neg <- get_mat_method(star_dtelist, "star",
+                                      pc1_transcripts_neg,  n = cutoff)
+star_matrix_pc2_pos <- get_mat_method(star_dtelist, "star",
+                                      pc2_transcripts_pos,  n = cutoff)
+star_matrix_pc2_neg <- get_mat_method(star_dtelist, "star",
+                                      pc2_transcripts_neg,  n = cutoff)
+star_matrix_pc3 <- get_mat_method(star_dtelist, "star",
+                                  pc3_transcripts,  n = cutoff)
+star_matrix_pc4 <- get_mat_method(star_dtelist, "star",
+                                  pc4_transcripts,  n = cutoff)
+star_matrix_pc5_pos <- get_mat_method(star_dtelist, "star",
+                                      pc5_transcripts_pos,  n = cutoff)
+star_matrix_pc5_neg <- get_mat_method(star_dtelist, "star",
+                                      pc5_transcripts_neg,  n = cutoff)
+```
+
+### Salmon top loadings
+```{r}
+cutoff <- 500
+
+salmon_matrix_pc1_pos <- get_mat_method(salmon_dtelist, "salmon",
+                                        pc1_transcripts_pos, n = cutoff)
+salmon_matrix_pc1_neg <- get_mat_method(salmon_dtelist, "salmon",
+                                        pc1_transcripts_neg, n = cutoff)
+salmon_matrix_pc2_pos <- get_mat_method(salmon_dtelist, "salmon",
+                                        pc2_transcripts_pos,  n = cutoff)
+salmon_matrix_pc2_neg <- get_mat_method(salmon_dtelist, "salmon",
+                                        pc2_transcripts_neg,  n = cutoff)
+salmon_matrix_pc3 <- get_mat_method(salmon_dtelist, "salmon",
+                                    pc3_transcripts, n = cutoff)
+salmon_matrix_pc4 <- get_mat_method(salmon_dtelist, "salmon",
+                                    pc4_transcripts, n = cutoff)
+salmon_matrix_pc5_pos <- get_mat_method(salmon_dtelist, "salmon",
+                                        pc5_transcripts_pos,  n = cutoff)
+salmon_matrix_pc5_neg <- get_mat_method(salmon_dtelist, "salmon",
+                                        pc5_transcripts_neg,  n = cutoff)
+```
+
+## Top loadings for kmer analysis {.tabset}
+Do a kmer analysis on these bad boys
+### HISAT2
+```{r}
+hisat2_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::arrange(PC1)
+
+write_csv(hisat2_loadings,
+          here("data/hisat2_loadings.csv"))
+
+hisat2_loadings <- head(hisat2_loadings, 100)
+
+DT::datatable(hisat2_loadings)
+```
+
+### Kallisto
+```{r}
+kallisto_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::arrange(PC2) %>%
+  dplyr::select(transcript_id, PC2)
+
+write_csv(kallisto_loadings,
+          here("data/kallisto_loadings.csv"))
+
+kallisto_loadings <- head(kallisto_loadings, 100)
+
+DT::datatable(kallisto_loadings)
+```
+
+### STAR 
+```{r}
+star_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::select(transcript_id, PC2) %>%
+  dplyr::arrange(desc(PC2))
+
+write_csv(star_loadings,
+          here("data/star_loadings.csv"))
+
+star_loadings <- head(star_loadings, 100)
+
+DT::datatable(star_loadings)
+```
+
+### Salmon
+```{r}
+salmon_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::select(transcript_id, PC5) %>%
+  dplyr::arrange(PC5)
+
+write_csv(salmon_loadings,
+          here("data/salmon_loadings.csv"))
+
+salmon_loadings <- head(salmon_loadings, 100)
+
+DT::datatable(salmon_loadings)
+```
+
+### Control
+```{r}
+control_ko_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::select(transcript_id, PC3) %>%
+  dplyr::arrange(abs(PC3))
+
+write_csv(control_ko_loadings,
+          here("data/control_ko_loadings.csv"))
+
+control_ko_loadings <- head(control_ko_loadings, 100)
+
+DT::datatable(control_ko_loadings)
+```
+
+### SRR13401118
+```{r}
+srr13401118_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::select(transcript_id, PC4) %>%
+  dplyr::arrange(abs(PC4))
+
+write_csv(srr13401118_loadings,
+          here("data/srr13401118_loadings.csv"))
+
+srr13401118_loadings <- head(srr13401118_loadings, 100)
+
+DT::datatable(srr13401118_loadings)
+```
+
+### PC5 STAR loadings
+```{r}
+pc5_star_loadings <- p_narm$loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  as_tibble() %>%
+  dplyr::select(transcript_id, PC5) %>%
+  dplyr::arrange(desc(PC5))
+
+write_csv(pc5_star_loadings,
+          here("data/pc5_star_loadings.csv"))
+
+pc5_star_loadings <- head(pc5_star_loadings, 100)
+
+DT::datatable(pc5_star_loadings)
+```
+
+## Get counts from the top loadings 
+```{r joined_counts}
+get_counts <- function(x, method) { 
+  x %>%
+    cpm(log = TRUE) %>%
+    as.data.frame() %>%
+    set_colnames(paste0(method, "_", colnames(.))) %>%
+    rownames_to_column("transcript_id")
+}
+
+hisat2_counts <- get_counts(hisat2_dtelist, method = "HISAT2")
+kallisto_counts <- get_counts(kallisto_dtelist, method = "Kallisto")
+salmon_counts <- get_counts(salmon_dtelist, method = "Salmon")
+star_counts <- get_counts(star_dtelist, method = "STAR")
+
+joined_counts <- inner_join(hisat2_counts,
+           kallisto_counts,
+           by = "transcript_id") %>%
+  inner_join(salmon_counts,
+             by = "transcript_id") %>%
+  inner_join(star_counts,
+             by = "transcript_id") %>%
+  pivot_longer(cols = starts_with(c("HI", "ka", "sa", "ST")),
+               names_to = "sample_id",
+               values_to = "counts") %>%
+  dplyr::mutate(method = str_remove(sample_id, "\\_.*"))
+```
+
+### Negative PC1 loadings counts {.tabset}
+#### Boxplot
+Plot boxplot for HISAT2 loading counts
+```{r hisat2_loadings_counts}
+neg_pc1_loadings_samples <- joined_counts %>%
+  dplyr::filter(transcript_id %in% hisat2_loadings$transcript_id) %>%
+  ggplot(aes(x = sample_id, y = counts, fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_viridis_d() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 negative PC1 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+neg_pc1_loadings_samples
+```
+
+Save the plot
+```{r}
+ggsave(plot = neg_pc1_loadings_samples,
+       filename = "neg_pc1_loadings_samples.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Violin plot
+Make violin plot for HISAT2 loadings counts
+```{r}
+neg_pc1_loadings_methods <- joined_counts %>%
+  dplyr::filter(transcript_id %in% hisat2_loadings$transcript_id) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(colour = "black", width = 0.25) +
+  scale_fill_viridis_d() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 negative PC1 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+neg_pc1_loadings_methods
+```
+
+Save the plot
+```{r}
+ggsave(plot = neg_pc1_loadings_methods,
+       filename = "neg_pc1_loadings_methods.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Quasirandom plot
+```{r}
+top_neg_pc1_loading_expression <- joined_counts %>%
+  dplyr::filter(transcript_id %in% hisat2_loadings$transcript_id[1]) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_boxplot() +
+  geom_quasirandom() +
+  ggtitle("Top negative PC1 loading: EEF1A1-202") +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  theme_justin()
+
+top_neg_pc1_loading_expression
+```
+
+```{r}
+ggsave(plot = top_neg_pc1_loading_expression,
+       filename = "top_neg_pc1_loading_expression.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+### Negative PC2 loadings counts
+#### Boxplot
+```{r kallisto_loadings_counts}
+neg_pc2_loadings_samples <- joined_counts %>%
+  dplyr::filter(transcript_id %in% kallisto_loadings$transcript_id) %>%
+  ggplot(aes(x = sample_id, y = counts, fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_viridis_d() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 Negative PC2 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+neg_pc2_loadings_samples
+```
+
+```{r}
+ggsave(plot = neg_pc2_loadings_samples,
+       filename = "neg_pc2_loadings_samples.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Violin plot
+```{r}
+neg_pc2_loadings_methods <- joined_counts %>%
+  dplyr::filter(transcript_id %in% kallisto_loadings$transcript_id) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(colour = "black", width = 0.25) +
+  scale_fill_viridis_d() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 negative PC2 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+neg_pc2_loadings_methods
+```
+
+Save the plot
+```{r}
+ggsave(plot = neg_pc2_loadings_methods,
+       filename = "neg_pc2_loadings_methods.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Quasirandom plot
+```{r}
+top_neg_pc2_loading_expression <- joined_counts %>%
+  dplyr::filter(transcript_id %in% kallisto_loadings$transcript_id[1]) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_boxplot() +
+  geom_quasirandom() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle(
+    "Top Negative PC2 loading: Novel transcript - 18S Ribosomal Pseudogene"
+    ) +
+  theme_justin()
+
+top_neg_pc2_loading_expression
+```
+
+save plot
+```{r}
+ggsave(plot = top_neg_pc2_loading_expression,
+       filename = "top_neg_pc2_loading_expression.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+### Positive PC2 loadings counts
+#### Boxplot
+```{r star_loadings_counts}
+pos_pc2_loadings_samples <- joined_counts %>%
+  dplyr::filter(transcript_id %in% star_loadings$transcript_id) %>%
+  ggplot(aes(x = sample_id, y = counts, fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_viridis_d() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 positive PC2 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+pos_pc2_loadings_samples
+```
+
+Save the plot
+```{r}
+ggsave(plot = pos_pc2_loadings_samples,
+       filename = "pos_pc2_loadings_samples.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Violin plot
+```{r}
+pos_pc2_loadings_methods <- joined_counts %>%
+  dplyr::filter(transcript_id %in% star_loadings$transcript_id) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(colour = "black", width = 0.25) +
+  scale_fill_viridis_d() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 positive PC2 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+pos_pc2_loadings_methods
+```
+
+Save the plot
+```{r}
+ggsave(plot = pos_pc2_loadings_methods,
+       filename = "pos_pc2_loadings_methods.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Quasirandom plot
+```{r}
+top_pos_pc2_loading_expression <- joined_counts %>%
+  dplyr::filter(transcript_id %in% star_loadings$transcript_id[1]) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_boxplot() +
+  geom_quasirandom() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top positive PC2 loading: GOLGA2-201") +
+  theme_justin()
+
+top_pos_pc2_loading_expression
+```
+
+Save the plot
+```{r}
+ggsave(plot = top_pos_pc2_loading_expression,
+       filename = "top_pos_pc2_loading_expression.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+### Negative PC5 loadings counts
+#### Boxplot
+```{r salmon_loadings_counts}
+pc5_neg_loadings_samples <- joined_counts %>%
+  dplyr::filter(transcript_id %in% salmon_loadings$transcript_id) %>%
+  ggplot(aes(x = sample_id, y = counts, fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_viridis_d() +
+    labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 negative PC5 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+pc5_neg_loadings_samples
+```
+
+Save the plot
+```{r}
+ggsave(plot = pc5_neg_loadings_samples,
+       filename = "pc5_neg_loadings_samples.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Violin plot
+```{r}
+pc5_neg_loadings_methods <- joined_counts %>%
+  dplyr::filter(transcript_id %in% salmon_loadings$transcript_id) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(colour = "black", width = 0.25) +
+  scale_fill_viridis_d() +
+    labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top 100 negative PC5 transcript loadings") +
+  theme_justin() +
+  theme(axis.text.x = element_blank())
+
+pc5_neg_loadings_methods
+```
+
+Save the plot
+```{r}
+ggsave(plot = pc5_neg_loadings_methods,
+       filename = "pc5_neg_loadings_methods.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+#### Quasirandom plot
+```{r}
+top_pc5_neg_loading_expression <- joined_counts %>%
+  dplyr::filter(transcript_id %in% salmon_loadings$transcript_id[1]) %>%
+  ggplot(aes(x = method, y = counts, fill = method)) +
+  geom_boxplot() +
+  geom_quasirandom() +
+  labs(x = "",
+       y = "transcript counts (log2 CPM)",
+       fill = "Method") +
+  ggtitle("Top negative PC5 loading: LINC00506-203") +
+  theme_justin()
+
+top_pc5_neg_loading_expression
+```
+
+Save the plot
+```{r}
+ggsave(plot = top_pc5_neg_loading_expression,
+       filename = "top_pc5_neg_loading_expression.png",
+       path = here("figures/"),
+       device = "png",
+       height = 16,
+       width = 18,
+       dpi = 300,
+       units = "cm")
+```
+
+# Heatmap Expression Plots
+
+## Make the matrices
+```{r eval=FALSE}
+joined_matrix_pc1_pos <- rbind(hisat2_matrix_pc1_pos,
+                               kallisto_matrix_pc1_pos,
+                               star_matrix_pc1_pos,
+                               salmon_matrix_pc1_pos)
+
+joined_matrix_pc1_neg <- rbind(hisat2_matrix_pc1_neg,
+                               kallisto_matrix_pc1_neg,
+                               star_matrix_pc1_neg,
+                               salmon_matrix_pc1_neg)
+
+joined_matrix_pc2_pos <- rbind(hisat2_matrix_pc2_pos,
+                               kallisto_matrix_pc2_pos,
+                               star_matrix_pc2_pos,
+                               salmon_matrix_pc2_pos)
+
+joined_matrix_pc2_neg <- rbind(hisat2_matrix_pc2_neg,
+                               kallisto_matrix_pc2_neg,
+                               star_matrix_pc2_neg,
+                               salmon_matrix_pc2_neg)
+
+joined_matrix_pc3 <- rbind(hisat2_matrix_pc3,
+                           kallisto_matrix_pc3,
+                           star_matrix_pc3,
+                           salmon_matrix_pc3)
+
+joined_matrix_pc4 <- rbind(hisat2_matrix_pc4,
+                           kallisto_matrix_pc4,
+                           star_matrix_pc4,
+                           salmon_matrix_pc4)
+
+joined_matrix_pc5_neg <- rbind(hisat2_matrix_pc5_neg,
+                               kallisto_matrix_pc5_neg,
+                               star_matrix_pc5_neg,
+                               salmon_matrix_pc5_neg)
+```
+
+
+## Set the annotations for Heatmaps
+```{r}
+anno_col <- matrix_pc1_neg %>%
+  rownames() %>%
+  as.data.frame() %>%
+  set_colnames("ID") %>%
+  mutate(Method = str_remove(.$ID, "_.*")) %>%
+  column_to_rownames("ID") %>%
+  mutate(Method = case_when(Method == "star" ~ "STAR",
+                            .default = Method)) %>%
+  mutate("Sample ID" = str_remove(rownames(.), ".*_"),
+         "Group" = case_when(`Sample ID` %in% c("SRR13401116",
+                                                "SRR13401117",
+                                                "SRR13401118",
+                                                "SRR13401119") ~ "Knockout",
+                             .default = "Control"))
+
+anno_colour <- list("Sample ID" = c("SRR13401116" = "#FFFF00", 
+                                  "SRR13401117" = "#FFD014",
+                                  "SRR13401118" = "#BF914A",
+                                  "SRR13401119" = "#A07265",
+                                  "SRR13401120" = "#805280",
+                                  "SRR13401121" = "#60339B",
+                                  "SRR13401122" = "#301A4E",
+                                  "SRR13401123" = "#130A1F"),
+                    "Method" = c("HISAT2" = "black",
+                              "Kallisto" = "grey30",
+                              "STAR" = "grey60",
+                              "Salmon" = "grey90"),
+                    "Group" = c("Knockout" = "darkorange",
+                                "Control" = "darkblue"))
+```
+
+## Create Heatmaps {.tabset}
+### Positive PC1 loadings
+```{r}
+pc1_heatmap_pos <- matrix_pc1_pos %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           main = "Top 200 Positive Transcript Loadings: PC1",
+           show_rownames = FALSE,
+           show_colnames = FALSE) %T>%
+  ggsave(filename = "supp_figure_heatmap_pc1_pos.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+
+pc1_heatmap_pos
+```
+
+### Negative PC1 loadings
+```{r}
+pc1_heatmap_neg <- matrix_pc1_neg %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           main = "Top 200 Negative Transcript Loadings: PC1",
+           show_rownames = FALSE,
+           show_colnames = FALSE) %T>%
+  ggsave(filename = "supp_figure_heatmap_pc1_neg.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+
+pc1_heatmap_neg
+```
+
+### Positive PC2 loadings
+```{r}
+pc2_heatmap_pos <- matrix_pc2_pos %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Positive Transcript Loadings: PC2") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc2_pos.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### Negative PC2 loadings
+```{r}
+pc2_heatmap_neg <- matrix_pc2_neg %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Negative Transcript Loadings: PC2") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc2_neg.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### PC3 Loadings
+```{r}
+pc3_heatmap <- matrix_pc3 %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Transcript Loadings: PC3") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc3.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### PC4 loadings
+```{r}
+pc4_heatmap <- matrix_pc4 %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Transcript Loadings: PC4") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc4.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### Positive PC5 loadings
+```{r}
+pc5_heatmap_pos <- matrix_pc5_pos %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Positive Transcript Loadings: PC5") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc5_pos.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### Negative PC5 loadings
+```{r}
+pc5_heatmap_neg <- matrix_pc5_neg %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Negative Transcript Loadings: PC5") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc5_neg.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### Positive PC6 loadings
+```{r}
+pc6_heatmap_pos <- matrix_pc6_pos %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Positive Transcript Loadings: PC6") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc6_pos.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+### Negative PC6 loadings
+```{r}
+pc6_heatmap_neg <- matrix_pc6_neg %>%
+  head(200) %>%
+  t() %>%
+  pheatmap(border_color = NA,
+           cutree_cols = 4,
+           cutree_rows = 1,
+           annotation_col = anno_col,
+           annotation_colors = anno_colour,
+           show_rownames = FALSE,
+           show_colnames = FALSE,
+           main = "Top 200 Negative Transcript Loadings: PC6") %T>%
+  ggsave(filename = "supp_figure_heatmap_pc6_neg.png",
+         path = here("figures/"),
+         height = 25,
+         width = 20,
+         units = "cm")
+```
+
+# Number of isoforms in each
+## PC1
+Plot isoforms vs gene length
+```{r}
+pc1_neg_gene_df <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(gene_id %in% pc1_transcripts_neg$gene_id) %>%
+  left_join(gene_txp_anno %>%
+              dplyr::select(gene_name,
+                            transcript_name,
+                            transcript_id,
+                            "gene_width" = width),
+            by = c("tx_id" = "transcript_id"))
+
+loadings_df <- pca_obj$loadings %>%
+  dplyr::select(PC1) %>%
+  dplyr::arrange(PC1) %>%
+  rownames_to_column("transcript_name") %>%
+  left_join(gene_txp_anno %>%
+              dplyr::select("gene_id",
+                            "gene_name",
+                            "transcript_id",
+                            "transcript_name"),
+            by = "transcript_name") %>%
+  left_join(txp_gene_ensdb_lengths %>%
+              dplyr::select("tx_id",
+                            "transcript_length",
+                            "gc_content"),
+            by = c("transcript_id" = "tx_id"))
+
+loadings_df %>%
+  ggplot() +
+  geom_point(aes(x = transcript_length,
+                 y = PC1))
+
+loadings_df %>%
+  ggplot() +
+  geom_point(aes(x = gc_content,
+                 y = PC1))
+
+isoform_df <- pc1_neg_gene_df$gene_name %>%
+  table() %>%
+  sort() %>%
+  as.data.frame() %>% 
+  set_colnames(c("gene_name", "isoforms")) %>%
+  left_join(pc1_neg_gene_df %>%
+              dplyr::select("gene_id", "gene_name"),
+            by = "gene_name") %>%
+  left_join(txp_gene_ensdb_lengths %>%
+              dplyr::select("gene_id", "gene_length")) %>%
+  distinct()
+
+isoform_df %>%
+  ggplot() +
+  geom_point(aes(x = isoforms, y = gene_length))
+
+sister_isoforms <- loadings_df %>%
+  left_join(isoform_df %>%
+              dplyr::select(gene_id,
+                            isoforms),
+            by = "gene_id")
+
+sister_isoforms %>%
+  ggplot() +
+  geom_point(aes(x = isoforms, y = PC1)) +
+  theme_bw()
+```
+
+## PC2
+Plot isoforms vs gene length
+```{r}
+pc2_neg_gene_df <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(gene_id %in% pc2_transcripts_neg$gene_id) %>%
+  left_join(gene_txp_anno %>%
+              dplyr::select(gene_name,
+                            transcript_name,
+                            transcript_id,
+                            "gene_width" = width),
+            by = c("tx_id" = "transcript_id"))
+
+loadings_df <- pca_obj$loadings %>%
+  dplyr::select(PC2) %>%
+  dplyr::arrange(PC2) %>%
+  rownames_to_column("transcript_name") %>%
+  left_join(gene_txp_anno %>%
+              dplyr::select("gene_id",
+                            "gene_name",
+                            "transcript_id",
+                            "transcript_name"),
+            by = "transcript_name") %>%
+  left_join(txp_gene_ensdb_lengths %>%
+              dplyr::select("tx_id",
+                            "transcript_length",
+                            "gc_content"),
+            by = c("transcript_id" = "tx_id"))
+
+loadings_df %>%
+  ggplot() +
+  geom_point(aes(x = transcript_length,
+                 y = PC2))
+
+loadings_df %>%
+  ggplot() +
+  geom_point(aes(x = gc_content,
+                 y = PC2))
+
+isoform_df <- pc2_neg_gene_df$gene_name %>%
+  table() %>%
+  sort() %>%
+  as.data.frame() %>% 
+  set_colnames(c("gene_name", "isoforms")) %>%
+  left_join(pc2_neg_gene_df %>%
+              dplyr::select("gene_id", "gene_name"),
+            by = "gene_name") %>%
+  left_join(txp_gene_ensdb_lengths %>%
+              dplyr::select("gene_id", "gene_length")) %>%
+  distinct()
+
+isoform_df %>%
+  ggplot() +
+  geom_point(aes(x = isoforms, y = gene_length))
+
+sister_isoforms <- loadings_df %>%
+  left_join(isoform_df %>%
+              dplyr::select(gene_id,
+                            isoforms),
+            by = "gene_id")
+
+sister_isoforms %>%
+  ggplot() +
+  geom_point(aes(x = isoforms, y = abs(PC2)))
+```
+

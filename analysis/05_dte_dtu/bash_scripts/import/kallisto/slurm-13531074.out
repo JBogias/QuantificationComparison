@@ -1,0 +1,165 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages",.libPaths()))
+> 
+> getKallisto_TPMs <- function(basedir) {
++   
++   require(dplyr)
++   require(magrittr)
++   require(tibble)
++   require(readr)
++   
++   k_dirs <- paste0(basedir, "/", list.files(basedir))
++   names(k_dirs) <- list.files(basedir)
++   
++   for(j in 1:length(k_dirs)) {
++   
++     k_dirs_df <- k_dirs %>%
++       as.data.frame() %>%
++       rownames_to_column("names") %>%
++       set_colnames(c("names", "paths"))
++     
++     current_k_path <- paste0(k_dirs_df$paths[j], "/abundance.tsv")
++     print(j)
++     print(current_k_path)
++     
++     k_file <- read_tsv(current_k_path)
++     
++     NTx <- length(k_file$tpm)
++     NSamples <- length(k_dirs)
++     
++     k_tpms <- dplyr::select(k_file,
++                             target_id,
++                             tpm)
++     
++     if (j == 1L) {
++       tpm_df <- k_tpms
++     } else if (j > 1L) {
++       tpm_df <- left_join(k_tpms,
++                           tpm_df,
++                           by = "target_id")
++     }
++     
++   }
++   tpm_df %>% set_colnames(c("transcript_id", names(k_dirs)))
++ }
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto"
+> 
+> kallisto_abundance <- getKallisto_TPMs(basedir)
+Loading required package: dplyr
+
+Attaching package: ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+Loading required package: magrittr
+Loading required package: tibble
+Loading required package: readr
+[1] 1
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401116/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 2
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401117/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 3
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401118/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 4
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401119/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 5
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401120/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 6
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401121/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 7
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401122/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+[1] 8
+[1] "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto/SRR13401123/abundance.tsv"
+Rows: 196722 Columns: 5
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: "\t"
+chr (1): target_id
+dbl (4): length, eff_length, est_counts, tpm
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> write_csv(kallisto_abundance, "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/import/kallisto/kallisto_TPMs_GRCh38.csv.gz")
+> 

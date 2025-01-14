@@ -1,0 +1,13 @@
+Lmod has detected the following error: These module(s) exist but cannot be
+loaded as requested: "foss/2016b"
+   Try: "module spider foss/2016b" to see how to load the module(s).
+
+Executing this command requires loading "foss/2016b" which failed while
+processing the following module(s):
+
+    Module fullname            Module Filename
+    ---------------            ---------------
+    gffread/0.9.12-foss-2016b  /home/a1666761/.local/easybuild/modules/all/gffread/0.9.12-foss-2016b.lua
+
+
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/generate_transcriptome.sh: line 8: gffread: command not found

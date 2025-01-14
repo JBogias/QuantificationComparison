@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=01:00:00
+#SBATCH --mem=80GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Executing script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_index.sh

@@ -1,0 +1,8 @@
+[quant] processed 86,724,579 reads, 67,208,205 reads pseudoaligned - 77.49614% mapping rate
+[quant] processed 85,266,196 reads, 68,941,905 reads pseudoaligned - 80.85491% mapping rate
+[quant] processed 78,377,390 reads, 61,472,846 reads pseudoaligned - 78.43186% mapping rate
+[quant] processed 86,823,499 reads, 69,461,631 reads pseudoaligned - 80.00326% mapping rate
+[quant] processed 87,592,950 reads, 70,909,148 reads pseudoaligned - 80.95303% mapping rate
+[quant] processed 89,399,973 reads, 70,301,243 reads pseudoaligned - 78.63676% mapping rate
+[quant] processed 91,387,828 reads, 74,062,208 reads pseudoaligned - 81.04165% mapping rate
+[quant] processed 88,445,849 reads, 72,210,144 reads pseudoaligned - 81.64334% mapping rate

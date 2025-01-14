@@ -1,0 +1,2 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+/tmp/slurmd/job13531064/slurm_script: line 15: /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/import/get_kallistoTPMs.R: No such file or directory

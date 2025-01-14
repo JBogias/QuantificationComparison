@@ -1,0 +1,13 @@
+#!/bin/bash -l
+#SBATCH -p batch 
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --time=04:00:00
+#SBATCH --mem=50GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Execute the script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/get_data/get_data.sh

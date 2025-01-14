@@ -1,0 +1,8 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+gzip: /hpcfs/users/a1666761/Refs/ref_annotation/Homo_sapiens.GRCh38.103.gtf.gz: No such file or directory
+Nov 10 12:53:29 ..... started STAR run
+Nov 10 12:53:29 ... starting to generate Genome files
+
+EXITING because of INPUT ERROR: could not read from genomeFastaFile: /dev/fd/63
+
+Nov 10 12:53:52 ...... FATAL ERROR, exiting

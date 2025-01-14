@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH --time=00:10:00
+#SBATCH --mem=1GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+
+module load R
+export R_LIBS_USER=/hpcfs/users/a1666761/R_Packages
+
+R < /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/import/star-salmon/get_salmonTPMs.R --no-save

@@ -1,0 +1,193 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+May 12 14:19:32 ..... started STAR run
+May 12 14:19:32 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401116_R1.fastq.gz: No such file or directory
+May 12 14:20:24 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401116.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:20:25 ...... FATAL ERROR, exiting
+May 12 14:20:26 ..... started STAR run
+May 12 14:20:26 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401116_R2.fastq.gz: No such file or directory
+May 12 14:20:39 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401116.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:20:40 ...... FATAL ERROR, exiting
+May 12 14:20:41 ..... started STAR run
+May 12 14:20:41 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401117_R1.fastq.gz: No such file or directory
+May 12 14:20:53 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401117.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:20:55 ...... FATAL ERROR, exiting
+May 12 14:20:55 ..... started STAR run
+May 12 14:20:55 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401117_R2.fastq.gz: No such file or directory
+May 12 14:21:08 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401117.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:21:09 ...... FATAL ERROR, exiting
+May 12 14:21:09 ..... started STAR run
+May 12 14:21:09 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401118_R1.fastq.gz: No such file or directory
+May 12 14:21:22 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401118.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:21:23 ...... FATAL ERROR, exiting
+May 12 14:21:24 ..... started STAR run
+May 12 14:21:24 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401118_R2.fastq.gz: No such file or directory
+May 12 14:21:36 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401118.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:21:38 ...... FATAL ERROR, exiting
+May 12 14:21:38 ..... started STAR run
+May 12 14:21:38 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401119_R1.fastq.gz: No such file or directory
+May 12 14:21:51 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401119.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:21:52 ...... FATAL ERROR, exiting
+May 12 14:21:52 ..... started STAR run
+May 12 14:21:53 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401119_R2.fastq.gz: No such file or directory
+May 12 14:22:05 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401119.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:22:07 ...... FATAL ERROR, exiting
+May 12 14:22:07 ..... started STAR run
+May 12 14:22:07 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401120_R1.fastq.gz: No such file or directory
+May 12 14:22:19 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401120.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:22:21 ...... FATAL ERROR, exiting
+May 12 14:22:21 ..... started STAR run
+May 12 14:22:21 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401120_R2.fastq.gz: No such file or directory
+May 12 14:22:34 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401120.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:22:35 ...... FATAL ERROR, exiting
+May 12 14:22:36 ..... started STAR run
+May 12 14:22:36 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401121_R1.fastq.gz: No such file or directory
+May 12 14:22:48 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401121.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:22:50 ...... FATAL ERROR, exiting
+May 12 14:22:50 ..... started STAR run
+May 12 14:22:50 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401121_R2.fastq.gz: No such file or directory
+May 12 14:23:03 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401121.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:23:04 ...... FATAL ERROR, exiting
+May 12 14:23:04 ..... started STAR run
+May 12 14:23:05 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401122_R1.fastq.gz: No such file or directory
+May 12 14:23:17 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401122.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:23:19 ...... FATAL ERROR, exiting
+May 12 14:23:19 ..... started STAR run
+May 12 14:23:19 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401122_R2.fastq.gz: No such file or directory
+May 12 14:23:32 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401122.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:23:33 ...... FATAL ERROR, exiting
+May 12 14:23:33 ..... started STAR run
+May 12 14:23:33 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401123_R1.fastq.gz: No such file or directory
+May 12 14:23:46 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401123.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:23:48 ...... FATAL ERROR, exiting
+May 12 14:23:48 ..... started STAR run
+May 12 14:23:48 ..... loading genome
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401123_R2.fastq.gz: No such file or directory
+May 12 14:24:01 ..... started mapping
+
+EXITING because of FATAL ERROR in reads input: short read sequence line: 0
+Read Name=@SRR13401123.sra.1
+Read Sequence====
+DEF_readNameLengthMax=50000
+DEF_readSeqLengthMax=650
+
+May 12 14:24:02 ...... FATAL ERROR, exiting

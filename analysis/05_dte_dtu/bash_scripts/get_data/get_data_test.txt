@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH -p batch 
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --time=00:01:00
+#SBATCH --mem=1GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Execute the script
+bash ./get_data.sh

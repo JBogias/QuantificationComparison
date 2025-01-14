@@ -1,0 +1,143 @@
+---
+title: "Annotations"
+author: "Justin Bogias"
+date: "2023-09-18"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+ Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(dplyr)
+library(readr)
+library(magrittr)
+library(tibble)
+library(AnnotationHub)
+library(ensembldb)
+library(DT)
+library(here)
+```
+
+ Create annotations
+In this workflow we will use the GRCh38 build of the transcriptome to capture differences using an up to date build
+This is different from my different chapters, however here I will not be specifically studying placenta, but the intricacies of the methods we use
+```{r retrieve_annotations}
+ah <- AnnotationHub()
+ 
+ah %>% query(c("grch38", "103"))
+```
+
+
+# GTF file annotations
+```{r}
+gene_txp_anno_gtf <- ah[["AH89862"]]
+```
+
+## Gene-level Annotations
+```{r gene_anno}
+gene_anno <- gene_txp_anno_gtf %>%
+  as_tibble() %>%
+  dplyr::filter(type == "gene")
+
+write_csv(gene_anno,
+           here("data/gene_anno.csv.gz"))
+```
+
+## Transcript-level Annotations
+```{r txp_anno}
+ txp_anno <- gene_txp_anno_gtf %>%
+   as_tibble() %>%
+  dplyr::filter(type == "transcript")
+
+ write_csv(txp_anno, here("data/txp_anno.csv.gz"))
+```
+
+## Exon Annotations
+```{r exon_anno}
+ exon_anno <- gene_txp_anno_gtf %>%
+   as_tibble() %>%
+   dplyr::filter(type == "exon")
+
+ write_csv(exon_anno,
+           here("data/exon_anno.csv.gz"))
+```
+
+## Prepare transcript labels
+```{r gene_txp_anno}
+ gene_txp_anno <- gene_txp_anno_gtf %>%
+   as_tibble() %>%
+   dplyr::filter(type %in% c("gene", "transcript"))
+
+ write_csv(gene_txp_anno,
+           here("data/grch38_103_df.csv.gz"))
+ 
+ transcript_key <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript") %>%
+  dplyr::select(transcript_id,
+                transcript_name)
+ 
+ write_csv(transcript_key,
+           here("data/grch38_103_tx_name_key.csv.gz"))
+```
+
+# Ensembl 103 EnsDb
+```{r}
+gene_txp_anno_ensdb <- ah[["AH89426"]]
+```
+
+## Prepare Annotations for the DGEList
+```{r txp_gene_ensdb_lengths}
+txp_ensdb <- gene_txp_anno_ensdb %>%
+  ensembldb::transcripts()
+
+txp_ensdb_lengths <- gene_txp_anno_ensdb %>%
+  lengthOf("tx") %>%
+  as.data.frame() %>%
+  set_colnames("transcript_length") %>%
+  rownames_to_column("tx_id") %>%
+  inner_join(txp_ensdb %>%
+               as.data.frame(),
+             by = "tx_id")
+
+txp_gene_ensdb_lengths <- gene_txp_anno_ensdb %>%
+  lengthOf("gene") %>%
+  as.data.frame() %>%
+  set_colnames("gene_length") %>%
+  rownames_to_column("gene_id") %>%
+  inner_join(txp_ensdb_lengths %>%
+               as.data.frame(),
+             by = "gene_id") %>%
+  as_tibble()
+
+write_csv(txp_gene_ensdb_lengths,
+          here("data/txp_gene_ensdb_lengths.csv.gz"))
+```
+
+## Write Annotations for future use
+```{r dtelist_annos}
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+
+ dtelist_anno <- txp_gene_ensdb_lengths %>%
+   inner_join(gene_txp_anno %>% dplyr::filter(type == "transcript") %>%
+                dplyr::select("transcript_id", "transcript_name"),
+              by = c("tx_id" = "transcript_id"))
+ dtelist_anno %>%
+   write_csv(here("data/dtelist_anno.csv.gz"))
+```
+
+# Annotations Example
+I'll throw in a little example of what is being saved here
+```{r}
+DT::datatable(head(dtelist_anno, n = 100))
+```
+

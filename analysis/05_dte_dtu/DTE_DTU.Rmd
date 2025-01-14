@@ -1,0 +1,974 @@
+---
+title: "DE and DTU Analyses"
+author: "Justin Bogias"
+date: "2023-09-18"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+library(magrittr)
+library(ggplot2)
+library(ggrepel)
+library(viridis)
+library(edgeR)
+library(tximport)
+library(DRIMSeq)
+library(stageR)
+library(ggfortify)
+library(pheatmap)
+library(cowplot)
+library(ggbeeswarm)
+library(tibble)
+library(tictoc)
+library(here)
+```
+
+Some methods will be called "hisat2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+I have also defined several functions here for quality of life purposes
+```{r}
+# source(here("R/get_dtelist.R"))
+# source(here("R/get_filter_plot.R"))
+source(here("R/de_testing.R"))
+source(here("R/de_plotting.R"))
+source(here("R/get_dtu_tximport.R"))
+source(here("R/get_stager_res.R"))
+source(here("R/draw_venn_STAR.R"))
+# source(here("R/get_pca_obj_star.R"))
+# source(here("R/get_pca_plot_star.R"))
+# source(here("R/plot_blandr.R"))
+# source(here("R/cor_funcs.R"))
+# source(here("R/plot_blandr.R"))
+# source(here("R/theme_justin.R"))
+
+# From 01_Annotations
+gene_txp_anno <- read_csv(here("data/grch38_103_df.csv.gz"))
+
+txp_gene_ensdb_lengths <- read_csv(
+  here("data/txp_gene_ensdb_lengths.csv.gz")
+  )
+
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+
+# From 02_DTElist
+hisat2_dtelist <- read_rds(here("data/hisat2_dtelist.rds"))
+kallisto_dtelist <- read_rds(here("data/kallisto_dtelist.rds"))
+salmon_dtelist <- read_rds(here("data/sa_dtelist.rds"))
+star_dtelist <- read_rds(here("data/star_dtelist.rds"))
+```
+
+## R Markdown
+
+# DTE and DTU Analysis {.tabset}
+The question we are asking in this study is, "does the choice and implenetation of an alignment-quantification algorithm inherently bias the RNA-seq counts and downstream statistical tests of differential expression and usage?"
+From what others have already observed in numerous benchmarking studies is that different methods perform differently, use different algorithms, and are even tailored to answering different biological questions about the data. However, the impacts have been infrequently tested for gene expression, and not even considered for transcript expression.
+My hypothesis is, "the usage of different alignment-quantification methods will not produce any major difference in gene or transcript expression and downstream statistical analysis."
+To tackle this hypothesis, I will conduct differential gene expression (DGE), differential transcript expression (DTE), and differential transcript usage (DTU). I will overlap the results to see how they compare at different perspectives.
+If there are any observable differences then I will interrogate the differences by comparing the relation of the variable genes with any biological differences to see if there is an overrepresentation of any biological bias.
+The four methods chosen are Kallisto, Salmon, Selective Alignment-Salmon, and Hisat2-Salmon
+
+The code below details the differential expression and usage in each method
+## Hisat2
+```{r hisat2_tests}
+# hisat2 ----
+hisat2_lmfit <- hisat2_dtelist %>% 
+  de_lmfit() %T>%
+  write_csv(here("data/hisat2_lmfit.csv"))
+
+hisat2_lmfit_sig <- hisat2_lmfit %>%
+  dplyr::filter(DE == TRUE)
+
+# Takes 25 minutes on my Macbook
+# Takes 6 minutes on my Lenovo
+tic("DTU")
+message("Starting DTU now")
+hisat2_dtu <- read_csv(here("data/dtu_cts_hisat2_salmon.csv.gz")) %>%
+  get_dtu_tximport(annotation = gene_txp_anno) %>%
+  get_stager_res() %T>%
+  write_csv(here("data/hisat2_DTU.csv"))
+message("DTU run finishing now")
+toc()
+
+# DTU: 1319.4 seconds elapsed on Macbook
+# DTU: 361.75 seconds elapsed on Lenovo
+
+hisat2_dtu_sig <- hisat2_dtu %>%
+  dplyr::filter(DTU == TRUE)
+
+hisat2_dtu_sig_txp <- hisat2_dtu %>%
+  dplyr::filter(txpDTU == TRUE)
+```
+
+```{r hisat2_plots}
+# Check to see what needs labelling
+hisat2_lmfit %>% plot_ma()
+
+label_data <- hisat2_lmfit %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1.5) %>%
+  mutate(group = case_when(
+    FDR < 0.05 & logFC > 1 ~ "Up Regulated",
+    FDR < 0.05 & logFC < -1 ~ "Down Regulated",
+    .default = "Not Significant"
+  ))
+
+
+hisat2_ma <- hisat2_lmfit %>%
+  plot_ma() +
+  geom_label_repel(data = label_data,
+                  aes(x = AveExpr, y = logFC, label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+hisat2_volc <- hisat2_lmfit %>%
+  plot_volc() +
+  geom_label_repel(data = label_data,
+                  aes(x = logFC, y = -log10(FDR), label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+hisat2_legend <- cowplot::get_legend(plot_ma(hisat2_lmfit))
+
+hisat2_de <- cowplot::plot_grid(hisat2_volc, hisat2_ma, hisat2_legend,
+                                 rel_widths = c(1, 1, 0.3),
+                                 nrow = 1)
+
+hisat2_de
+
+hisat2_de %>%
+  ggsave(filename = "hisat2_ma_volc_plot.png",
+         path = here("figures/"),
+         device = "png",
+         height = 140,
+         width = 330,
+         units = "mm",
+         dpi = 400)
+```
+
+## Salmon
+```{r salmon_testing}
+salmon_lmfit <- salmon_dtelist %>% 
+  de_lmfit() %T>%
+  write_csv(here("data/sa_lmfit.csv"))
+
+salmon_lmfit_sig <- salmon_lmfit %>%
+  dplyr::filter(DE == TRUE)
+
+salmon_dtu <- read_csv(
+  here("data/dtu_cts_sa.csv.gz")
+  ) %>%
+  get_dtu_tximport(annotation = gene_txp_anno) %>%
+  get_stager_res() %T>%
+  write_csv(here("data/salmon_DTU.csv"))
+
+salmon_dtu_sig <- salmon_dtu %>%
+  dplyr::filter(DTU == TRUE)
+
+salmon_dtu_sig_txp <- salmon_dtu %>%
+  dplyr::filter(txpDTU == TRUE)
+```
+
+```{r salmon_plots}
+# Check to see what needs labelling
+salmon_lmfit %>% plot_ma()
+
+label_data <- salmon_lmfit %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 6) %>%
+  mutate(group = case_when(
+    FDR < 0.05 & logFC > 1 ~ "Up Regulated",
+    FDR < 0.05 & logFC < -1 ~ "Down Regulated",
+    .default = "Not Significant"
+  )) %>%
+  dplyr::filter(!str_detect(seqnames, "CHR"))
+
+
+salmon_ma <- salmon_lmfit %>%
+  plot_ma() +
+  geom_label_repel(data = label_data,
+                  aes(x = AveExpr, y = logFC, label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+salmon_volc <- salmon_lmfit %>%
+  plot_volc() +
+  geom_label_repel(data = label_data,
+                  aes(x = logFC, y = -log10(FDR), label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+salmon_legend <- cowplot::get_legend(plot_ma(salmon_lmfit))
+
+salmon_de <- cowplot::plot_grid(salmon_volc, salmon_ma, salmon_legend,
+                                 rel_widths = c(1, 1, 0.3),
+                                 nrow = 1)
+
+salmon_de
+
+salmon_de %>%
+  ggsave(filename = "salmon_ma_volc_plot.png",
+         path = here("figures/"),
+         device = "png",
+         height = 140,
+         width = 330,
+         units = "mm",
+         dpi = 400)
+```
+
+## STAR
+```{r star_tests}
+star_lmfit <- star_dtelist %>% 
+  de_lmfit() %T>%
+  write_csv(here("data/star_lmfit.csv"))
+
+star_lmfit_sig <- star_lmfit %>%
+  dplyr::filter(DE == TRUE)
+
+star_dtu <- read_csv(
+  here("data/dtu_cts_star_salmon.csv.gz")
+  ) %>%
+  get_dtu_tximport(annotation = gene_txp_anno) %>%
+  get_stager_res() %T>%
+  write_csv(here("data/star_DTU.csv"))
+
+star_dtu_sig <- star_dtu %>%
+  dplyr::filter(DTU == TRUE)
+
+star_dtu_sig_txp <- star_dtu %>%
+  dplyr::filter(txpDTU == TRUE)
+```
+
+```{r star_plots}
+# Check to see what needs labelling
+star_lmfit %>% plot_ma()
+
+label_data <- star_lmfit %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 6) %>%
+  mutate(group = case_when(
+    FDR < 0.05 & logFC > 1 ~ "Up Regulated",
+    FDR < 0.05 & logFC < -1 ~ "Down Regulated",
+    .default = "Not Significant"
+  )) %>% 
+  dplyr::filter(!str_detect(seqnames, "CHR"))
+
+
+star_ma <- star_lmfit %>%
+  plot_ma() +
+  geom_label_repel(data = label_data,
+                  aes(x = AveExpr, y = logFC, label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+star_volc <- star_lmfit %>%
+  plot_volc() +
+  geom_label_repel(data = label_data,
+                  aes(x = logFC, y = -log10(FDR), label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+star_legend <- cowplot::get_legend(plot_ma(star_lmfit))
+
+star_de <- cowplot::plot_grid(star_volc, star_ma, star_legend,
+                              rel_widths = c(1, 1, 0.3),
+                              nrow = 1)
+
+star_de
+
+star_de %>%
+  ggsave(filename = "star_ma_volc_plot.png",
+         path = here("figures/"),
+         device = "png",
+         height = 140,
+         width = 330,
+         units = "mm",
+         dpi = 400)
+```
+
+## Kallisto
+```{r kallisto_tests}
+kallisto_lmfit <- kallisto_dtelist %>% 
+  de_lmfit() %T>%
+  write_csv(here("data/kallisto_lmfit.csv"))
+
+kallisto_lmfit_sig <- kallisto_lmfit %>%
+  dplyr::filter(DE == TRUE)
+
+kallisto_dtu <- read_csv(
+  here("data/dtu_cts_kallisto.csv.gz")
+  ) %>%
+  get_dtu_tximport(annotation = gene_txp_anno) %>%
+  get_stager_res() %T>%
+  write_csv(here("data/kallisto_DTU.csv"))
+
+kallisto_dtu_sig <- kallisto_dtu %>%
+  dplyr::filter(DTU == TRUE)
+
+kallisto_dtu_sig_txp <- kallisto_dtu %>%
+  dplyr::filter(txpDTU == TRUE)
+```
+
+```{r kallisto_plots}
+# Check to see what needs labelling
+kallisto_lmfit %>% plot_ma()
+
+label_data <- kallisto_lmfit %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 4) %>%
+  mutate(group = case_when(
+    FDR < 0.05 & logFC > 1 ~ "Up Regulated",
+    FDR < 0.05 & logFC < -1 ~ "Down Regulated",
+    .default = "Not Significant"
+  ))
+
+
+kallisto_ma <- kallisto_lmfit %>%
+  plot_ma() +
+  geom_label_repel(data = label_data,
+                  aes(x = AveExpr, y = logFC, label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+kallisto_volc <- kallisto_lmfit %>%
+  plot_volc() +
+  geom_label_repel(data = label_data,
+                  aes(x = logFC, y = -log10(FDR), label = transcript_name),
+                  size = 3,
+                  max.overlaps = Inf,
+                  force_pull = 0.5,
+                  force = 3) +
+  theme(legend.position = "none")
+
+kallisto_legend <- cowplot::get_legend(plot_ma(kallisto_lmfit))
+
+kallisto_de <- cowplot::plot_grid(kallisto_volc, kallisto_ma, kallisto_legend,
+                                  rel_widths = c(1, 1, 0.3),
+                                  nrow = 1)
+
+kallisto_de
+
+kallisto_de %>%
+  ggsave(filename = "kallisto_ma_volc_plot.png",
+         path = here("figures/"),
+         device = "png",
+         height = 140,
+         width = 330,
+         units = "mm",
+         dpi = 400)
+```
+
+# Venn Diagram (Figure 4)
+```{r}
+venn_dte <- draw_venn(hisat2_res =  hisat2_lmfit_sig,
+                      kallisto_res = kallisto_lmfit_sig,
+                      star_res = star_lmfit_sig,
+                      salmon_res = salmon_lmfit_sig) %>%
+  as_grob()
+
+ggsave(venn_dte,
+       filename = "figure3_venn_dte.png",
+       path = here("figures/"),
+       device = "png",
+       height = 10,
+       width = 13,
+       units = "cm")
+
+hisat2_dtu_sig_gene <- hisat2_dtu %>% 
+  dplyr::filter(DTU == TRUE) %>%
+  dplyr::select(Gene, geneFDR, DTU) %>%
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+kallisto_dtu_sig_gene <- kallisto_dtu %>% 
+  dplyr::filter(DTU == TRUE) %>%
+  dplyr::select(Gene, geneFDR, DTU) %>%
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+star_dtu_sig_gene <- star_dtu %>%
+  dplyr::filter(DTU == TRUE) %>%
+  dplyr::select(Gene, geneFDR, DTU) %>% 
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+salmon_dtu_sig_gene <- salmon_dtu %>%
+  dplyr::filter(DTU == TRUE) %>%
+  dplyr::select(Gene, geneFDR, DTU) %>%
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+venn_dtu <- draw_venn(hisat2_res =  hisat2_dtu_sig_gene,
+                      kallisto_res = kallisto_dtu_sig_gene,
+                      star_res = star_dtu_sig_gene,
+                      salmon_res = salmon_dtu_sig_gene) %>%
+  as_grob()
+
+venn_dtu
+
+ggsave(venn_dtu,
+       filename = "figure3_venn_dtu.png",
+       path = here("figures/"),
+       device = "png",
+       height = 10,
+       width = 13,
+       units = "cm")
+```
+
+### sig_dtu_transcripts
+```{r}
+hisat2_dtu_sig_transcripts <- hisat2_dtu %>% 
+  dplyr::filter(txpDTU == TRUE) %>%
+  dplyr::select(Transcript, txpFDR, txpDTU) %>%
+  distinct()
+
+kallisto_dtu_sig_transcripts <- kallisto_dtu %>%
+  dplyr::filter(txpDTU == TRUE) %>%
+  dplyr::select(Transcript, txpFDR, txpDTU) %>%
+  distinct()
+
+star_dtu_sig_transcripts <- star_dtu %>%
+  dplyr::filter(txpDTU == TRUE) %>%
+  dplyr::select(Transcript, txpFDR, txpDTU) %>% 
+  distinct()
+
+salmon_dtu_sig_transcripts <- salmon_dtu %>%
+  dplyr::filter(txpDTU == TRUE) %>%
+  dplyr::select(Transcript, txpFDR, txpDTU) %>%
+  distinct()
+
+venn_dtu_txp <- draw_venn(hisat2_res =  hisat2_dtu_sig_transcripts,
+                          kallisto_res = kallisto_dtu_sig_transcripts,
+                          star_res = star_dtu_sig_transcripts,
+                          salmon_res = salmon_dtu_sig_transcripts) %>%
+  as_grob()
+
+venn_dtu_txp
+
+ggsave(venn_dtu_txp,
+       filename = "figure4_venn_txpdtu.png",
+       path = here("figures/"),
+       device = "png",
+       height = 10,
+       width = 13,
+       units = "cm")
+```
+
+## Cowplot
+```{r}
+venn_cowplot <- cowplot::plot_grid(
+  venn_dte,
+  venn_dtu_txp,
+  venn_dtu,
+  ncol = 1,
+  labels = c("                              a. DTE Results", 
+             "            b. DTU Transcript-level Results",
+             "                  c. DTU Gene-level Results")
+  )
+
+venn_cowplot
+
+ggsave(venn_cowplot,
+       filename = "figure4_venn_cowplot.png",
+       path = here("figures/"),
+       height = 30,
+       width = 20,
+       units = "cm",
+       dpi = 400)
+```
+
+## Venn diagram for all
+We make DE == TRUE for all rows here so that all genes are included in the venn diagram regardless of significance, just filtering
+```{r}
+hisat2_venn_all <- hisat2_lmfit %>%
+  mutate(DE = TRUE)
+
+salmon_venn_all <- salmon_lmfit %>%
+  mutate(DE = TRUE)
+
+kallisto_venn_all <- kallisto_lmfit %>%
+  mutate(DE = TRUE)
+
+star_venn_all <- star_lmfit %>%
+  mutate(DE = TRUE)
+
+venn_dte_nofilter <- draw_venn(hisat2_res =  hisat2_venn_all,
+                               kallisto_res = kallisto_venn_all,
+                               star_res = star_venn_all,
+                               salmon_res = salmon_venn_all) %>%
+  as_grob()
+
+
+ggsave(venn_dte_nofilter,
+       filename = "figure_supp_venn_all_dte_filter_pass.png",
+       path = here("figures/"),
+       device = "png",
+       height = 10,
+       width = 13,
+       units = "cm")
+
+
+hisat2_dtu_sig_gene <- hisat2_dtu %>% 
+  dplyr::select(Gene, geneFDR, DTU) %>%
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+kallisto_dtu_sig_gene <- kallisto_dtu %>% 
+  dplyr::select(Gene, geneFDR, DTU) %>%
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+star_dtu_sig_gene <- star_dtu %>%
+  dplyr::select(Gene, geneFDR, DTU) %>% 
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+salmon_dtu_sig_gene <- salmon_dtu %>%
+  dplyr::select(Gene, geneFDR, DTU) %>%
+  dplyr::rename("Transcript" = Gene) %>%
+  distinct()
+
+venn_dtu_nofilter <- draw_venn(hisat2_res =  hisat2_dtu_sig_gene,
+                               kallisto_res = kallisto_dtu_sig_gene,
+                               star_res = star_dtu_sig_gene,
+                               salmon_res = salmon_dtu_sig_gene) %>%
+  as_grob()
+
+ggsave(venn_dtu_nofilter,
+       filename = "supp_venn_dtu_all_filter_pass.png",
+       path = here("figures/"),
+       device = "png",
+       height = 10,
+       width = 13,
+       units = "cm")
+```
+
+# Compare differences
+
+```{r hisat2_differences}
+hisat2_distinct <- hisat2_lmfit %>%
+  dplyr::select(transcript_id,
+                transcript_name,
+                AveExpr, 
+                logFC,
+                P.Value,
+                FDR,
+                DE) %>%
+  dplyr::mutate(distinct = case_when(
+    !transcript_id %in% unique(
+      rbind(salmon_lmfit,
+            star_lmfit,
+            kallisto_lmfit)[["transcript_id"]]
+    ) ~ "Distinct",
+    .default = "Not Distinct"))
+
+hisat2_exclusive <- hisat2_distinct %>%
+  dplyr::filter(distinct == "Distinct")
+
+hisat2_distinct_plot <- hisat2_distinct %>%
+  ggplot(aes(x = AveExpr, y = logFC, colour = distinct, shape = DE)) +
+  geom_point() +
+  geom_point(data = hisat2_exclusive) +
+  scale_colour_manual(values = c("navy", "lightblue")) +
+  labs(x = "Mean Transcript Expression (log2 CPM)",
+       y = "log2 Fold Change",
+       colour = "Exclusivity",
+       shape = "Significant?") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 14,
+                                    face = "bold"),
+        legend.text = element_text(colour = "black", size = 12))
+
+hisat2_distinct_plot
+
+# Save these plots
+ggsave(plot = hisat2_distinct_plot,
+       filename = "hisat2_distinct_plot.png",
+       path = here("figures/"),
+       height = 100,
+       width = 200,
+       units = "mm",
+       device = "png",
+       dpi = 400)
+```
+
+```{r kallisto_differences}
+kallisto_distinct <- kallisto_lmfit %>%
+  dplyr::select(transcript_id,
+                transcript_name,
+                AveExpr,
+                logFC,
+                P.Value, 
+                FDR,
+                DE) %>%
+  dplyr::mutate(distinct = case_when(
+    !transcript_id %in% unique(
+      rbind(salmon_lmfit,
+            star_lmfit,
+            hisat2_lmfit)[["transcript_id"]]
+    ) ~ "Distinct",
+    .default = "Not Distinct"))
+
+kallisto_exclusive <- kallisto_distinct %>%
+  dplyr::filter(distinct == "Distinct")
+
+kallisto_distinct_plot <- kallisto_distinct %>%
+  ggplot(aes(x = AveExpr, y = logFC, colour = distinct, shape = DE)) +
+  geom_point() +
+  geom_point(data = kallisto_exclusive) +
+  scale_colour_manual(values = c("navy", "lightblue")) +
+  labs(x = "Mean Transcript Expression (log2 CPM)",
+       y = "log2 Fold Change",
+       colour = "Exclusivity",
+       shape = "Significant?") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 14,
+                                    face = "bold"),
+        legend.text = element_text(colour = "black", size = 12))
+
+kallisto_distinct_plot
+
+# Save these plots
+ggsave(plot = kallisto_distinct_plot,
+       filename = "kallisto_distinct_plot.png",
+       path = here("figures/"),
+       height = 100,
+       width = 200,
+       units = "mm",
+       device = "png",
+       dpi = 400)
+```
+
+```{r star_differences}
+star_distinct <- star_lmfit %>%
+  dplyr::select(transcript_id,
+                transcript_name,
+                AveExpr,
+                logFC,
+                P.Value, 
+                FDR,
+                DE) %>%
+  dplyr::mutate(distinct = case_when(
+    !transcript_id %in% unique(
+      rbind(salmon_lmfit,
+            kallisto_lmfit,
+            hisat2_lmfit)[["transcript_id"]]
+    ) ~ "Distinct",
+    .default = "Not Distinct"))
+
+star_exclusive <- star_distinct %>%
+  dplyr::filter(distinct == "Distinct")
+
+star_distinct_plot <- star_distinct %>%
+  ggplot(aes(x = AveExpr, y = logFC, colour = distinct, shape = DE)) +
+  geom_point() +
+  geom_point(data = star_exclusive) +
+  scale_colour_manual(values = c("navy", "lightblue")) +
+  labs(x = "Mean Transcript Expression (log2 CPM)",
+       y = "log2 Fold Change",
+       colour = "Exclusivity",
+       shape = "Significant?") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 14,
+                                    face = "bold"),
+        legend.text = element_text(colour = "black", size = 12))
+
+star_distinct_plot
+
+# Save these plots
+ggsave(plot = star_distinct_plot,
+       filename = "star_distinct_plot.png",
+       path = here("figures/"),
+       height = 100,
+       width = 200,
+       units = "mm",
+       device = "png",
+       dpi = 400)
+```
+
+```{r salmon_differences}
+salmon_distinct <- salmon_lmfit %>%
+  dplyr::select(transcript_id,
+                transcript_name,
+                AveExpr,
+                logFC,
+                P.Value, 
+                FDR,
+                DE) %>%
+  dplyr::mutate(distinct = case_when(
+    !transcript_id %in% unique(
+      rbind(star_lmfit,
+            kallisto_lmfit,
+            hisat2_lmfit)[["transcript_id"]]
+    ) ~ "Distinct",
+    .default = "Not Distinct"))
+
+salmon_exclusive <- salmon_distinct %>%
+  dplyr::filter(distinct == "Distinct")
+
+salmon_distinct_plot <- salmon_distinct %>%
+  ggplot(aes(x = AveExpr, y = logFC, colour = distinct, shape = DE)) +
+  geom_point() +
+  geom_point(data = salmon_exclusive) +
+  scale_colour_manual(values = c("navy", "lightblue")) +
+  labs(x = "Mean Transcript Expression (log2 CPM)",
+       y = "log2 Fold Change",
+       colour = "Exclusivity",
+       shape = "Significant?") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 14,
+                                    face = "bold"),
+        legend.text = element_text(colour = "black", size = 12))
+
+salmon_distinct_plot
+
+# Save these plots
+ggsave(plot = salmon_distinct_plot,
+       filename = "salmon_distinct_plot.png",
+       path = here("figures/"),
+       height = 100,
+       width = 200,
+       units = "mm",
+       device = "png",
+       dpi = 400)
+```
+
+
+```{r dte_differences}
+tx_in_all_de <- hisat2_lmfit_sig %>%
+  inner_join(salmon_lmfit,
+             by = "transcript_id") %>%
+  inner_join(star_lmfit,
+             by = "transcript_id") %>%
+  inner_join(kallisto_lmfit,
+             by = "transcript_id")
+
+# Get the hisat2 transcripts
+hisat2_dte_exclusive <- hisat2_lmfit_sig %>%
+  dplyr::filter(DE == TRUE) %>%
+  dplyr::filter(!transcript_id %in% salmon_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% star_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% kallisto_lmfit_sig$transcript_id)
+
+hisat2_dte_exclusive %>%
+  write_csv(here("data/hisat2_exclusive_tx.csv"))
+
+# Get salmon transcripts
+salmon_dte_exclusive <- salmon_lmfit_sig %>%
+  dplyr::filter(DE == TRUE) %>%
+  dplyr::filter(!transcript_id %in% hisat2_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% star_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% kallisto_lmfit_sig$transcript_id)
+
+# Group to be used for kmer analysis
+salmon_dte_exclusive %>%
+  head(28)
+
+salmon_dte_exclusive %>%
+  write_csv(here("data/salmon_exclusive_tx.csv"))
+
+# Get SA transcripts
+star_dte_exclusive <- star_lmfit_sig %>%
+  dplyr::filter(DE == TRUE) %>%
+  dplyr::filter(!transcript_id %in% hisat2_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% salmon_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% kallisto_lmfit_sig$transcript_id)
+
+# Group to be used for kmer analysis
+star_dte_exclusive %>%
+  head(28)
+
+star_dte_exclusive %>%
+  write_csv(here("data/star_exclusive_tx.csv"))
+
+# Get Kallisto transcripts
+kallisto_dte_exclusive <- kallisto_lmfit_sig %>%
+  dplyr::filter(DE == TRUE) %>%
+  dplyr::filter(!transcript_id %in% salmon_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% star_lmfit_sig$transcript_id) %>%
+  dplyr::filter(!transcript_id %in% hisat2_lmfit_sig$transcript_id)
+
+# Group to be used for kmer analysis
+kallisto_dte_exclusive %>%
+  head(28)
+
+kallisto_dte_exclusive %>%
+  write_csv(here("data/kallisto_exclusive_tx.csv"))
+
+# Get transcripts found in all methods
+all_methods_dte <- hisat2_lmfit_sig %>%
+  dplyr::filter(transcript_id %in% salmon_lmfit_sig$transcript_id) %>%
+  dplyr::filter(transcript_id %in% star_lmfit_sig$transcript_id) %>%
+  dplyr::filter(transcript_id %in% kallisto_lmfit_sig$transcript_id) %>%
+  dplyr::filter(DE == TRUE)
+
+all_methods_dte %>%
+  write_csv(here("data/all_methods_tx.csv"))
+```
+
+```{r dtu_differences}
+tx_in_all_dtu <- hisat2_dtu_sig %>%
+  inner_join(salmon_dtu_sig,
+             by = "Transcript") %>%
+  inner_join(star_dtu_sig,
+             by = "Transcript") %>%
+  inner_join(kallisto_dtu_sig,
+             by = "Transcript")
+
+hisat2_dtu_exclusive <- hisat2_dtu_sig %>%
+  dplyr::filter(!Transcript %in% salmon_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% star_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% kallisto_dtu_sig$Transcript)
+
+hisat2_dtu_exclusive %>%
+  write_csv(here("data/hisat2_exclusive_dtu.csv"))
+
+salmon_dtu_exclusive <- salmon_dtu_sig %>%
+  dplyr::filter(!Transcript %in% hisat2_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% star_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% kallisto_dtu_sig$Transcript)
+
+salmon_dtu_exclusive %>%
+  write_csv(here("data/salmon_exclusive_dtu.csv"))
+
+star_dtu_exclusive <- star_dtu_sig %>%
+  dplyr::filter(!Transcript %in% hisat2_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% salmon_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% kallisto_dtu_sig$Transcript)
+
+star_dtu_exclusive %>%
+  write_csv(here("data/star_exclusive_dtu.csv"))
+
+kallisto_dtu_exclusive <- kallisto_dtu_sig %>%
+  dplyr::filter(!Transcript %in% salmon_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% star_dtu_sig$Transcript) %>%
+  dplyr::filter(!Transcript %in% hisat2_dtu_sig$Transcript)
+
+kallisto_dtu_exclusive %>%
+  write_csv(here("data/kallisto_exclusive_dtu.csv"))
+
+all_methods_dtu <- hisat2_dtu_sig %>%
+  dplyr::filter(Transcript %in% salmon_dtu_sig$Transcript) %>%
+  dplyr::filter(Transcript %in% star_dtu_sig$Transcript) %>%
+  dplyr::filter(Transcript %in% kallisto_dtu_sig$Transcript)
+
+all_methods_dtu %>%
+  write_csv(here("data/all_methods_tx.csv"))
+```
+
+# Investigate PCBP2
+```{r}
+pcbp2_comp_df <- full_join(
+  hisat2_lmfit %>%
+    dplyr::select(transcript_name,
+                  "logFC_hisat2" = logFC,
+                  "FDR_hisat2" = FDR) %>%
+    dplyr::filter(str_detect(transcript_name, "PCBP2")),
+  kallisto_lmfit %>% 
+    dplyr::select(transcript_name,
+                  "logFC_kallisto" = logFC,
+                  "FDR_kallisto" = FDR) %>%
+    dplyr::filter(str_detect(transcript_name, "PCBP2")),
+  by = "transcript_name") %>%
+  full_join(salmon_lmfit %>%
+              dplyr::select(transcript_name,
+                            "logFC_salmon" = logFC,
+                            "FDR_salmon" = FDR) %>%
+              dplyr::filter(str_detect(transcript_name, "PCBP2")),
+            by = "transcript_name") %>% 
+  full_join(star_lmfit %>%
+              dplyr::select(transcript_name,
+                            "logFC_STAR" = logFC,
+                            "FDR_STAR" = FDR) %>%
+              dplyr::filter(str_detect(transcript_name, "PCBP2")),
+            by = "transcript_name")
+
+logfc_pcbp2 <- pcbp2_comp_df %>%
+  pivot_longer(cols = starts_with("logFC"),
+               values_to = "logFC",
+               names_to = "group") %>%
+  ggplot(aes(x = group, y = logFC, colour = group)) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = c("#61c3d7", "#4fc14d",
+                                 "#bf4dc1", "#f6866f")) +
+  facet_wrap(~ transcript_name,
+             nrow = 5, ncol = 5) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, colour = "black", angle = 90))
+
+ggsave(plot = logfc_pcbp2,
+       filename = "logfc_pcbp2.png",
+       path = here("figures/"),
+       height = 300,
+       width = 320,
+       units = "mm",
+       device = "png",
+       dpi = 400)
+
+fdr_pcbp2 <- pcbp2_comp_df %>%
+  pivot_longer(cols = starts_with("FDR"),
+               values_to = "FDR",
+               names_to = "group") %>%
+  ggplot(aes(x = group, y = -log2(FDR), colour = group)) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = c("#61c3d7", "#4fc14d",
+                                 "#bf4dc1", "#f6866f")) +
+  facet_wrap(~ transcript_name,
+             nrow = 5, ncol = 5) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 12, colour = "black", angle = 90))
+
+fdr_pcbp2
+```
+
+Save the plot
+```{r}
+ggsave(plot = fdr_pcbp2,
+       filename = "fdr_pcbp2.png",
+       path = here("figures/"),
+       height = 300,
+       width = 320,
+       units = "mm",
+       device = "png",
+       dpi = 400)
+```

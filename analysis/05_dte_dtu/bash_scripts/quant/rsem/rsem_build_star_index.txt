@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=6:00:00
+#SBATCH --mem=60GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Load modules
+module load arch/arch/haswell
+module load RSEM/1.2.30-foss-2017a
+module load STAR
+
+# Executing script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/quant/rsem_build_star_index.sh

@@ -1,0 +1,41 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+May 16 01:05:40 ..... started STAR run
+May 16 01:05:40 ..... loading genome
+May 16 01:06:35 ..... started mapping
+May 16 01:52:01 ..... finished mapping
+May 16 01:52:02 ..... finished successfully
+May 16 01:52:03 ..... started STAR run
+May 16 01:52:03 ..... loading genome
+May 16 01:53:02 ..... started mapping
+May 16 02:39:50 ..... finished mapping
+May 16 02:39:54 ..... finished successfully
+May 16 02:39:55 ..... started STAR run
+May 16 02:39:55 ..... loading genome
+May 16 02:40:53 ..... started mapping
+May 16 03:22:57 ..... finished mapping
+May 16 03:23:00 ..... finished successfully
+May 16 03:23:02 ..... started STAR run
+May 16 03:23:02 ..... loading genome
+May 16 03:24:02 ..... started mapping
+May 16 04:11:27 ..... finished mapping
+May 16 04:11:31 ..... finished successfully
+May 16 04:11:32 ..... started STAR run
+May 16 04:11:32 ..... loading genome
+May 16 04:12:35 ..... started mapping
+May 16 05:00:01 ..... finished mapping
+May 16 05:00:04 ..... finished successfully
+May 16 05:00:06 ..... started STAR run
+May 16 05:00:06 ..... loading genome
+May 16 05:01:06 ..... started mapping
+May 16 05:48:38 ..... finished mapping
+May 16 05:48:42 ..... finished successfully
+May 16 05:48:43 ..... started STAR run
+May 16 05:48:43 ..... loading genome
+May 16 05:49:42 ..... started mapping
+May 16 06:39:43 ..... finished mapping
+May 16 06:39:46 ..... finished successfully
+May 16 06:39:48 ..... started STAR run
+May 16 06:39:48 ..... loading genome
+May 16 06:40:50 ..... started mapping
+May 16 07:28:42 ..... finished mapping
+May 16 07:28:46 ..... finished successfully

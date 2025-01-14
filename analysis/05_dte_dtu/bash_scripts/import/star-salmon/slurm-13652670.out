@@ -1,0 +1,57 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(tximport)
+> library(readr)
+> library(magrittr)
+> library(tibble)
+> 
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant"
+> tx2gene <- read_csv("/hpcfs/users/a1666761/Refs/ref_annotations/tx2gene_grch38_103.csv.gz")
+Rows: 257222 Columns: 2
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (2): tx_id_version, gene_id
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> tx2gene <- dplyr::mutate(tx2gene,
++ 			 tx_id = str_remove(tx2gene$tx_id_version, "\\..*"),
++ 			 tx_id_version = NULL)
+Error in `dplyr::mutate()`:
+! Problem while computing `tx_id = str_remove(tx2gene$tx_id_version,
+  "\\..*")`.
+Caused by error in `str_remove()`:
+! could not find function "str_remove"
+Backtrace:
+    ▆
+ 1. ├─dplyr::mutate(...)
+ 2. ├─dplyr:::mutate.data.frame(...)
+ 3. │ └─dplyr:::mutate_cols(.data, dplyr_quosures(...), caller_env = caller_env())
+ 4. │   ├─base::withCallingHandlers(...)
+ 5. │   └─mask$eval_all_mutate(quo)
+ 6. └─base::.handleSimpleError(...)
+ 7.   └─dplyr h(simpleError(msg, call))
+ 8.     └─rlang::abort(...)
+Execution halted

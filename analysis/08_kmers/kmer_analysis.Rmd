@@ -1,0 +1,2455 @@
+---
+title: "kmer_analysis"
+author: "Justin Bogias"
+date: "2023-09-19"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(engine.opts = list(bash = "-l"))
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(tidyverse)
+library(magrittr)
+library(ggplot2)
+library(viridis)
+library(ggfortify)
+library(PCAtools)
+library(AnnotationHub)
+library(ensembldb)
+library(pheatmap)
+library(cowplot)
+library(ggbeeswarm)
+library(tibble)
+library(EnsDb.Hsapiens.v86)
+library(GenomicFeatures)
+library(here)
+```
+
+Some methods will be called "hisat2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+I have also defined several functions here for quality of life purposes
+```{r}
+source(here("R/cor_funcs_variance.R"))
+```
+
+# Load Data
+## Annotations
+Load in the annotations from the previous 01_annotations workflow here
+```{r}
+gene_txp_anno <- read_csv(here("data/annotations/grch38_103_df.csv.gz"))
+
+transcript_key <- gene_txp_anno %>%
+  dplyr::filter(type == "transcript") %>%
+  dplyr::select(transcript_id,
+                transcript_name)
+
+txp_gene_ensdb_lengths <- read_csv(
+  here("data/annotations/txp_gene_ensdb_lengths.csv.gz")
+  )
+
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+```
+
+## DTELists
+Load DTElists from 02_dtelist_prep
+```{r}
+hisat2_dtelist <- read_rds(
+  here("data/dtelists/hisat2_dtelist.rds")
+  )
+
+kallisto_dtelist <- read_rds(
+  here("data/dtelists/kallisto_dtelist.rds")
+  )
+
+salmon_dtelist <- read_rds(
+  here("data/dtelists/star_dtelist.rds")
+  )
+
+star_dtelist <- read_rds(
+  here("data/dtelists/star_dtelist.rds")
+  )
+```
+
+## Principal Component Loadings
+Load data from 04_principal_component_analysis
+```{r}
+hisat2_loadings <- read_csv(
+  here("data/pca/loadings/hisat2_loadings.csv")
+  ) %>%
+  head(250)
+
+kallisto_loadings <- read_csv(
+  here("data/pca/loadings/kallisto_loadings.csv")
+  ) %>%
+  head(275)
+
+salmon_loadings <- read_csv(
+  here("data/pca/loadings/star_loadings.csv")
+  ) %>%
+  head(300)
+
+star_loadings <- read_csv(
+  here("data/pca/loadings/star_loadings.csv")
+  ) %>%
+  head(275)
+```
+
+## Uniquely Identified Transcripts
+Load from 06_Correlations
+```{r}
+hisat2_unique <- read_csv(
+  here("data/unique_transcripts/hisat2_unique.csv.gz")
+  )
+kallisto_unique <- read_csv(
+  here("data/unique_transcripts/kallisto_unique.csv.gz")
+  )
+salmon_unique <- read_csv(
+  here("data/unique_transcripts/salmon_unique.csv.gz")
+  )
+star_unique <- read_csv(
+  here("data/unique_transcripts/star_unique.csv.gz")
+  )
+```
+
+# Get Combined Data
+```{r cor_df}
+joined_df <- get_joined_samples(w = hisat2_dtelist,
+                                x = kallisto_dtelist,
+                                y = star_dtelist,
+                                z = salmon_dtelist,
+                                method_w = "HISAT2",
+                                method_x = "Kallisto",
+                                method_y = "STAR",
+                                method_z = "Salmon",
+                                sample = 1)
+
+cor_df <- joined_df
+cor_df$variance <- apply(cor_df[,-1], 1, var)
+```
+
+
+```{r whole_cor_df}
+cor_df <- cor_df %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+```
+
+```{r lowcor_ensdb}
+lowcor_ensdb <- cor_df %>%
+  dplyr::arrange(desc(variance)) %>%
+  head(250) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+
+lowcor_ensdb <- lowcor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+```
+
+```{r highcor_ensdb}
+highcor_ensdb <- cor_df %>%
+  dplyr::arrange(variance) %>%
+  head(250) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+
+highcor_ensdb <- highcor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+```
+
+# Create sequences object
+```{r get_sequences}
+edb <- EnsDb.Hsapiens.v86
+dna <- ensembldb:::getGenomeTwoBitFile(edb)
+```
+
+# Low Correlation Transcripts K-mer Analysis
+```{r get_sequences_low}
+yTx_lowcor <- exonsBy(edb, filter = TxIdFilter(lowcor_ensdb$transcript_id))
+yTxSeqs_lowcor <- extractTranscriptSeqs(dna, yTx_lowcor)
+
+lowcor_df <- yTxSeqs_lowcor %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+lowcor_df %>%
+  head(n = 200) %>%
+  write_delim(here("data/kmer_analysis/correlation/lowcor/lowcor_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh lowcor_bash, eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/correlation
+
+cp ${loc}/lowcor/lowcor_seqs.txt ${loc}/lowcor/lowcor_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/lowcor/lowcor_mer_counts.jf -C ${loc}/lowcor/lowcor_seqs.fa
+    jellyfish histo ${loc}/lowcor/lowcor_mer_counts.jf > ${loc}/lowcor/histos/lowcor_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/lowcor/lowcor_mer_counts.jf > ${vol}/lowcor/dumps/lowcor_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/lowcor/lowcor_mer_counts.jf > ${loc}/lowcor/stats/lowcor_${i}_mer_counts_stats.txt
+    echo "lowcor ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_lowcor, eval=TRUE}
+lowcor_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% lowcor_ensdb$transcript_id)
+
+lowcor_lengths$transcript_length %>% summary()
+
+lowcor_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/correlation/lowcor/histos"))) {
+  lowcor_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/correlation/lowcor/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  lowcor_mer_hist <- rbind(lowcor_mer_hist, lowcor_mer_add)
+}
+
+lowcor_mer_hist <- lowcor_mer_hist %>%
+  mutate(group = "lowcor")
+
+write_csv(lowcor_mer_hist,
+          here("data/kmer_analysis/correlation/lowcor/lowcor_mer_hist.csv"))
+
+lowcor_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/correlation/lowcor/stats"))) {
+  lowcor_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/correlation/lowcor/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  lowcor_mer_stat <- rbind(lowcor_mer_stat, lowcor_stat_add)
+}
+
+lowcor_mer_stat <- lowcor_mer_stat %>%
+  mutate(group = "lowcor")
+
+write_csv(lowcor_mer_stat,
+          here("data/kmer_analysis/correlation/lowcor/lowcorcor_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+lowcor_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% lowcor_ensdb$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "lowcor")
+lowcor_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+lowcor_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+lowcor_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+lowcor_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+lowcor_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+# High Correlation Transcripts K-mer Analysis
+```{r get_sequences_high}
+yTx_highcor <- exonsBy(edb, filter = TxIdFilter(highcor_ensdb$transcript_id))
+yTxSeqs_highcor <- extractTranscriptSeqs(dna, yTx_highcor)
+
+highcor_df <- yTxSeqs_highcor %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+highcor_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/correlation/highcor/highcor_seqs.txt"),
+            delim = "\n",
+            eol = "\n\n",
+            col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/correlation
+
+cp ${loc}/highcor/highcor_seqs.txt ${loc}/highcor/highcor_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/highcor/highcor_mer_counts.jf -C ${loc}/highcor/highcor_seqs.fa
+    jellyfish histo ${loc}/highcor/highcor_mer_counts.jf > ${loc}/highcor/histos/highcor_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/highcor/highcor_mer_counts.jf > ${vol}/highcor/dumps/highcor_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/highcor/highcor_mer_counts.jf > ${loc}/highcor/stats/highcor_${i}_mer_counts_stats.txt
+    echo "highcor ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_highcor, eval=TRUE}
+highcor_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/correlation/highcor/histos"))) {
+  highcor_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/correlation/highcor/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  highcor_mer_hist <- rbind(highcor_mer_hist, highcor_mer_add)
+}
+
+highcor_mer_hist <- highcor_mer_hist %>%
+  mutate(group = "highcor")
+
+write_csv(highcor_mer_hist,
+          here("data/kmer_analysis/correlation/highcor/highcor_mer_hist.csv"))
+
+highcor_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/correlation/highcor/stats"))) {
+  highcor_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/correlation/highcor/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  highcor_mer_stat <- rbind(highcor_mer_stat, highcor_stat_add)
+}
+
+highcor_mer_stat <- highcor_mer_stat %>%
+  mutate(group = "highcor")
+
+write_csv(highcor_mer_stat,
+          here("data/kmer_analysis/correlation/highcor/highcor_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+highcor_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% highcor_ensdb$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "highcor")
+highcor_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+highcor_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+highcor_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+highcor_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+highcor_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+
+# K-mer Analysis by PCA Loadings
+
+## HISAT2
+```{r hisat2_kmer}
+hs2_tx_remove <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% hisat2_loadings$transcript_id) %>%
+  dplyr::filter(str_detect(seqnames, "^CHR")) %>%
+  as.data.frame()
+
+hisat2_loadings <- hisat2_loadings %>% 
+  dplyr::filter(!transcript_id %in% hs2_tx_remove$tx_id)
+
+yTx_hisat2 <- exonsBy(edb,
+                       filter = TxIdFilter(hisat2_loadings$transcript_id))
+
+yTxSeqs_hisat2 <- extractTranscriptSeqs(dna, yTx_hisat2)
+
+hisat2_kmer_df <- yTxSeqs_hisat2 %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+hisat2_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/loadings/hisat2/hisat2_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/loadings
+
+cp ${loc}/hisat2/hisat2_seqs.txt ${loc}/hisat2/hisat2_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/hisat2/hisat2_mer_counts.jf -C ${loc}/hisat2/hisat2_seqs.fa
+    jellyfish histo ${loc}/hisat2/hisat2_mer_counts.jf > ${loc}/hisat2/histos/hisat2_${loc}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/hisat2/hisat2_mer_counts.jf > ${vol}/hisat2/dumps/hisat2_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/hisat2/hisat2_mer_counts.jf > ${loc}/hisat2/stats/hisat2_${i}_mer_counts_stats.txt
+    echo "hisat2 ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_hisat2, eval=TRUE}
+hisat2_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/hisat2/histos"))) {
+  hisat2_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/hisat2/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  hisat2_mer_hist <- rbind(hisat2_mer_hist, hisat2_mer_add)
+}
+
+hisat2_mer_hist <- hisat2_mer_hist %>%
+  mutate(group = "hisat2")
+
+write_csv(hisat2_mer_hist,
+          here("data/kmer_analysis/loadings/hisat2/hisat2_mer_hist.csv"))
+
+hisat2_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/hisat2/stats"))) {
+  hisat2_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/hisat2/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  hisat2_mer_stat <- rbind(hisat2_mer_stat, hisat2_stat_add)
+}
+
+hisat2_mer_stat <- hisat2_mer_stat %>%
+  mutate(group = "hisat2")
+
+write_csv(hisat2_mer_stat,
+          here("data/kmer_analysis/loadings/hisat2/hisat2_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+hisat2_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% hisat2_loadings$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "hisat2")
+hisat2_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+hisat2_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+hisat2_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+hisat2_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+hisat2_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+## Kallisto
+```{r kallisto_kmer}
+k_tx_remove <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% kallisto_loadings$transcript_id) %>%
+  dplyr::filter(str_detect(seqnames, "^CHR")) %>%
+  as.data.frame()
+
+kallisto_loadings <- kallisto_loadings %>%
+  dplyr::filter(transcript_id %in% gene_txp_anno$transcript_id)
+
+yTx_kallisto <- exonsBy(edb, 
+                        filter = TxIdFilter(kallisto_loadings$transcript_id))
+
+yTxSeqs_kallisto <- extractTranscriptSeqs(dna, yTx_kallisto)
+
+kallisto_kmer_df <- yTxSeqs_kallisto %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+kallisto_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/loadings/kallisto/kallisto_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/loadings
+
+cp ${loc}/kallisto/kallisto_seqs.txt ${loc}/kallisto/kallisto_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/kallisto/kallisto_mer_counts.jf -C ${loc}/kallisto/kallisto_seqs.fa
+    jellyfish histo ${loc}/kallisto/kallisto_mer_counts.jf > ${loc}/kallisto/histos/kallisto_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/kallisto/kallisto_mer_counts.jf > ${vol}/kallisto/dumps/kallisto_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/kallisto/kallisto_mer_counts.jf > ${loc}/kallisto/stats/kallisto_${i}_mer_counts_stats.txt
+    echo "kallisto ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_kallisto, eval=TRUE}
+kallisto_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/kallisto/histos"))) {
+  kallisto_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/kallisto/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  kallisto_mer_hist <- rbind(kallisto_mer_hist, kallisto_mer_add)
+}
+
+kallisto_mer_hist <- kallisto_mer_hist %>%
+  mutate(group = "kallisto")
+
+write_csv(kallisto_mer_hist,
+          here("data/kmer_analysis/loadings/kallisto/kallisto_mer_hist.csv"))
+
+kallisto_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/kallisto/stats"))) {
+  kallisto_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/kallisto/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  kallisto_mer_stat <- rbind(kallisto_mer_stat, kallisto_stat_add)
+}
+
+kallisto_mer_stat <- kallisto_mer_stat %>%
+  mutate(group = "kallisto")
+
+write_csv(kallisto_mer_stat,
+          here("data/kmer_analysis/loadings/kallisto/kallisto_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+kallisto_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% kallisto_loadings$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "kallisto")
+kallisto_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+kallisto_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+kallisto_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+kallisto_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+kallisto_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+## Salmon
+```{r salmon_kmer}
+sal_tx_remove <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% salmon_loadings$transcript_id) %>%
+  dplyr::filter(str_detect(seqnames, "^CHR")) %>%
+  as.data.frame()
+
+salmon_loadings <- salmon_loadings %>%
+  dplyr::filter(!transcript_id %in% sal_tx_remove$tx_id)
+
+yTx_salmon <- exonsBy(edb, filter = TxIdFilter(salmon_loadings$transcript_id))
+
+yTxSeqs_salmon <- extractTranscriptSeqs(dna, yTx_salmon)
+
+salmon_kmer_df <- yTxSeqs_salmon %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+# Call head to make sure that we get 200 transcripts for each group!
+salmon_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/loadings/salmon/salmon_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/loadings
+
+cp ${loc}/salmon/salmon_seqs.txt ${loc}/salmon/salmon_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/salmon/salmon_mer_counts.jf -C ${loc}/salmon/salmon_seqs.fa
+    jellyfish histo ${loc}/salmon/salmon_mer_counts.jf > ${loc}/salmon/histos/salmon_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/salmon/salmon_mer_counts.jf > ${vol}/salmon/dumps/salmon_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/salmon/salmon_mer_counts.jf > ${loc}/salmon/stats/salmon_${i}_mer_counts_stats.txt
+    echo "salmon ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_salmon, eval=TRUE}
+salmon_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/salmon/histos"))) {
+  salmon_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/salmon/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  salmon_mer_hist <- rbind(salmon_mer_hist, salmon_mer_add)
+}
+
+salmon_mer_hist <- salmon_mer_hist %>%
+  mutate(group = "salmon")
+
+write_csv(salmon_mer_hist,
+          here("data/kmer_analysis/loadings/salmon/salmon_mer_hist.csv"))
+
+salmon_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/salmon/stats"))) {
+  salmon_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/salmon/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  salmon_mer_stat <- rbind(salmon_mer_stat, salmon_stat_add)
+}
+
+salmon_mer_stat <- salmon_mer_stat %>%
+  mutate(group = "salmon")
+
+write_csv(salmon_mer_stat,
+          here("data/kmer_analysis/loadings/salmon/salmon_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+salmon_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% salmon_loadings$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "salmon")
+salmon_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+salmon_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+salmon_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+salmon_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+salmon_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+## STAR
+```{r star_kmer}
+star_loadings <- star_loadings %>%
+  dplyr::filter(transcript_id %in% gene_txp_anno$transcript_id)
+
+yTx_sa <- exonsBy(edb, filter = TxIdFilter(star_loadings$transcript_id))
+
+yTxSeqs_sa <- extractTranscriptSeqs(dna, yTx_sa)
+
+star_kmer_df <- yTxSeqs_sa %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+star_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/loadings/star/star_seqs.txt"),
+            delim = "\n",
+            eol = "\n\n",
+            col_names = FALSE)
+
+# star_kmer_df %>%
+#   head(20) %>%
+#   write_delim(here("data/kmer_analysis/loadings/star_test/star_seqs_test.txt"),
+#               delim = "\n",
+#               eol = "\n\n",
+#               col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/loadings
+
+cp ${loc}/star/star_seqs.txt ${loc}/star/star_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/star/star_mer_counts.jf -C ${loc}/star/star_seqs.fa
+    jellyfish histo ${loc}/star/star_mer_counts.jf > ${loc}/star/histos/star_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/star/star_mer_counts.jf > ${vol}/star/dumps/star_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/star/star_mer_counts.jf > ${loc}/star/stats/star_${i}_mer_counts_stats.txt
+    echo "sa ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_sa, eval=TRUE}
+star_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/star/histos"))) {
+  star_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/star/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  star_mer_hist <- rbind(star_mer_hist, star_mer_add)
+}
+
+star_mer_hist <- star_mer_hist %>%
+  mutate(group = "star")
+
+write_csv(star_mer_hist,
+          here("data/kmer_analysis/loadings/star/star_mer_hist.csv"))
+
+star_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/loadings/star/stats"))) {
+  star_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/loadings/star/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  star_mer_stat <- rbind(star_mer_stat, star_stat_add)
+}
+
+star_mer_stat <- star_mer_stat %>%
+  mutate(group = "star")
+
+write_csv(star_mer_stat,
+          here("data/kmer_analysis/loadings/star/star_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+star_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% star_loadings$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "star")
+star_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+star_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+star_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  ggplot(aes(x = kmer_length, y = Repeats)) + 
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7)
+
+star_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+star_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+star_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+# Plotting
+## figure 5
+```{r}
+lengths_df <- rbind(hisat2_lengths,
+                    kallisto_lengths,
+                    star_lengths,
+                    salmon_lengths)
+
+lengths_by_method <- lengths_df %>%
+  dplyr::mutate(
+    group = case_when(
+      group == "kallisto" ~ "Kallisto",
+      group == "star" ~ "STAR",
+      group == "hisat2" ~ "HISAT2",
+      group == "salmon" ~ "Salmon"
+    ),
+    group = factor(group, levels = c("Concordant Transcripts",
+                                     "Discordant Transcripts",
+                                     #"Uncorrelated",
+                                     "Top Negative\nPC1 Loadings",
+                                     "Top Negative\nPC2 Loadings",
+                                     "Top Positive\nPC2 Loadings",
+                                     "Top Negative\nPC5 Loadings"))) %>%
+  ggplot(aes(x = group, y = transcript_length)) +
+  geom_boxplot(fill = "lightblue") +
+  scale_y_log10() +
+  labs(x = "",
+       y = "Transcript Length (log10)") +
+  theme_bw()
+
+lengths_by_method %>%
+  ggsave(filename = "length_by_method_plot.png",
+         path = here("figures/kmer_analysis/all_methods_plots/"),
+         device = "png",
+         height = 200,
+         width = 200,
+         units = "mm",
+         dpi = 400)
+
+txp_lengths_hist <- txp_gene_ensdb_lengths %>%
+  dplyr::select(tx_id, transcript_length) %>%
+  mutate(group = "All Transcripts") %>%
+  rbind(lengths_df %>%
+          dplyr::select(tx_id, transcript_length) %>%
+          dplyr::mutate(group = "Top Loadings Transcripts")) %>%
+  ggplot(aes(x = log10(transcript_length))) +
+  geom_histogram(bins = 200) +
+  scale_x_continuous(limits = c(1, 6),
+                     breaks = c(1, 2, 3, 4, 5, 6)) +
+  labs(x = "Transcript Length (log10)",
+       y = "Frequency") +
+  facet_grid(group ~ ., switch = "y", scales = "free") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 14),
+        strip.background = element_rect(fill = "lightblue"),
+        strip.text = element_text(colour = "black", size = 14))
+
+txp_lengths_hist %>%
+  ggsave(filename = "length_plot.png",
+         path = here("figures/kmer_analysis/all_methods_plots/"),
+         device = "png",
+         height = 150,
+         width = 200,
+         units = "mm",
+         dpi = 400)
+
+# We can see that there is stuff all variation in frequency within groups
+stat_df <- rbind(lowcor_mer_stat,
+                 highcor_mer_stat,
+                 hisat2_mer_stat,
+                 kallisto_mer_stat,
+                 star_mer_stat,
+                 salmon_mer_stat)
+
+stat_df <- stat_df %>%
+  dplyr::mutate(kmer_length = case_when(
+    kmer_length == 0 ~ 100,
+    .default = kmer_length
+  ))
+
+group_names <- stat_df$group %>% unique()
+new_stat_df <- data.frame()
+stat_group_chunk <- data.frame()
+for(g in group_names) {
+  for(i in 1:100) {
+    stat_kmer_chunk <- stat_df %>%
+      dplyr::filter(kmer_length == i) %>%
+      dplyr::filter(group == g) %>%
+      dplyr::select(Type, Frequency) %>%
+      distinct() %>%
+      column_to_rownames("Type") %>%
+      t() %>%
+      as_tibble() %>%
+      mutate(Multiplicity = Total-Distinct) %>%
+      t() %>%
+      set_colnames("Frequency") %>%
+      as.data.frame() %>%
+      rownames_to_column("Type") %>%
+      mutate(kmer_length = i, group = g)
+    
+    stat_group_chunk <- rbind(stat_group_chunk, stat_kmer_chunk)
+  }
+  new_stat_df <- rbind(new_stat_df, stat_group_chunk)
+}
+
+
+kmer_stat_plotting <- function(x, type, kmer = 31) {
+  x %>%
+    dplyr::filter(kmer_length >= kmer,
+                  Type == type) %>%
+    dplyr::mutate(
+      group = case_when(
+        group == "highcor" ~ "Concordant Transcripts",
+        group == "lowcor" ~ "Discordant Transcripts",
+        #group == "noncor" ~ "Uncorrelated",
+        group == "hisat2" ~ "Top Negative\nPC1 Loadings",
+        group == "kallisto" ~ "Top Negative\nPC2 Loadings",
+        group == "star" ~ "Top Positive\nPC2 Loadings",
+        group == "salmon" ~ "Top Negative\nPC5 Loadings"
+      ),
+      group = factor(group, levels = c("Concordant Transcripts",
+                                       "Discordant Transcripts",
+                                       #"Uncorrelated",
+                                       "Top Negative\nPC1 Loadings",
+                                       "Top Negative\nPC2 Loadings",
+                                       "Top Positive\nPC2 Loadings",
+                                       "Top Negative\nPC5 Loadings"))) %>%
+    ggplot(aes(x = kmer_length, y = Frequency)) +
+    geom_area(fill = "royalblue",
+              colour = "darkblue",
+              linewidth = 1,
+              alpha = 0.7) +
+    labs(x = "K-mer Length (bp)",
+         y = "Frequency") +
+    facet_grid(~ group) +
+    theme_bw() +
+    theme(strip.background = element_rect(fill = "lightblue"))
+}
+
+type_nms <- new_stat_df$Type %>% unique()
+
+for(i in type_nms) {
+  kmer_stat_plotting(new_stat_df, type = i) 
+  
+  ggsave(filename = paste0(i, "_kmer_length_freq.png"),
+         path = here("figures/kmer_analysis/all_methods_plots/"),
+         device = "png",
+         height = 150,
+         width = 300,
+         units = "mm",
+         dpi = 400)
+}
+
+
+hist_df <- rbind(lowcor_mer_hist,
+                 highcor_mer_hist,
+                 hisat2_mer_hist,
+                 kallisto_mer_hist,
+                 star_mer_hist,
+                 salmon_mer_hist)
+
+hist_df %>%
+  dplyr::filter(kmer_length == 31) %>%
+  dplyr::arrange(Repeats) %>%
+  ggplot(aes(x = Repeats, y = Frequency)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ group) +
+  theme_bw()
+```
+
+### kmer_numbers
+```{r unique_numbers}
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "highcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "lowcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "hisat2") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "kallisto") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "salmon") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "star") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+```
+
+```{r multiplicity_numbers}
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "highcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "lowcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "hisat2") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "kallisto") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "salmon") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "star") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+```
+
+# K-mer Analysis by Unique
+
+## HISAT2
+```{r hisat2_unique_kmer}
+hs2_tx_remove <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% hisat2_unique$transcript_id) %>%
+  dplyr::filter(str_detect(seqnames, "^CHR")) %>%
+  as.data.frame()
+
+hisat2_unique <- hisat2_unique %>% 
+  dplyr::filter(!transcript_id %in% hs2_tx_remove$tx_id)
+
+yTx_hisat2 <- exonsBy(edb,
+                       filter = TxIdFilter(hisat2_unique$transcript_id))
+
+yTxSeqs_hisat2 <- extractTranscriptSeqs(dna, yTx_hisat2)
+
+hisat2_kmer_df <- yTxSeqs_hisat2 %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+hisat2_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/unique/hisat2/hisat2_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/unique
+
+cp ${loc}/hisat2/hisat2_seqs.txt ${loc}/hisat2/hisat2_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/hisat2/hisat2_mer_counts.jf -C ${loc}/hisat2/hisat2_seqs.fa
+    jellyfish histo ${loc}/hisat2/hisat2_mer_counts.jf > ${loc}/hisat2/histos/hisat2_${loc}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/hisat2/hisat2_mer_counts.jf > ${vol}/hisat2/dumps/hisat2_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/hisat2/hisat2_mer_counts.jf > ${loc}/hisat2/stats/hisat2_${i}_mer_counts_stats.txt
+    echo "hisat2 ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_hisat2_unique, eval=TRUE}
+hisat2_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/hisat2/histos"))) {
+  hisat2_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/hisat2/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  hisat2_mer_hist <- rbind(hisat2_mer_hist, hisat2_mer_add)
+}
+
+hisat2_mer_hist <- hisat2_mer_hist %>%
+  mutate(group = "hisat2")
+
+write_csv(hisat2_mer_hist,
+          here("data/kmer_analysis/unique/hisat2/hisat2_mer_hist.csv"))
+
+hisat2_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/hisat2/stats"))) {
+  hisat2_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/hisat2/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  hisat2_mer_stat <- rbind(hisat2_mer_stat, hisat2_stat_add)
+}
+
+hisat2_mer_stat <- hisat2_mer_stat %>%
+  mutate(group = "hisat2")
+
+write_csv(hisat2_mer_stat,
+          here("data/kmer_analysis/unique/hisat2/hisat2_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+hisat2_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% hisat2_unique$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "hisat2")
+hisat2_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+hisat2_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+hisat2_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+hisat2_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+hisat2_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+## Kallisto
+```{r kallisto_unique_kmer}
+k_tx_remove <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% kallisto_unique$transcript_id) %>%
+  dplyr::filter(str_detect(seqnames, "^CHR")) %>%
+  as.data.frame()
+
+kallisto_unique <- kallisto_unique %>%
+  dplyr::filter(transcript_id %in% gene_txp_anno$transcript_id)
+
+yTx_kallisto <- exonsBy(edb, 
+                        filter = TxIdFilter(kallisto_unique$transcript_id))
+
+yTxSeqs_kallisto <- extractTranscriptSeqs(dna, yTx_kallisto)
+
+kallisto_kmer_df <- yTxSeqs_kallisto %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+kallisto_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/unique/kallisto/kallisto_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/unique
+
+cp ${loc}/kallisto/kallisto_seqs.txt ${loc}/kallisto/kallisto_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/kallisto/kallisto_mer_counts.jf -C ${loc}/kallisto/kallisto_seqs.fa
+    jellyfish histo ${loc}/kallisto/kallisto_mer_counts.jf > ${loc}/kallisto/histos/kallisto_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/kallisto/kallisto_mer_counts.jf > ${vol}/kallisto/dumps/kallisto_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/kallisto/kallisto_mer_counts.jf > ${loc}/kallisto/stats/kallisto_${i}_mer_counts_stats.txt
+    echo "kallisto ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_kallisto_unique, eval=TRUE}
+kallisto_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/kallisto/histos"))) {
+  kallisto_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/kallisto/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  kallisto_mer_hist <- rbind(kallisto_mer_hist, kallisto_mer_add)
+}
+
+kallisto_mer_hist <- kallisto_mer_hist %>%
+  mutate(group = "kallisto")
+
+write_csv(kallisto_mer_hist,
+          here("data/kmer_analysis/unique/kallisto/kallisto_mer_hist.csv"))
+
+kallisto_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/kallisto/stats"))) {
+  kallisto_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/kallisto/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  kallisto_mer_stat <- rbind(kallisto_mer_stat, kallisto_stat_add)
+}
+
+kallisto_mer_stat <- kallisto_mer_stat %>%
+  mutate(group = "kallisto")
+
+write_csv(kallisto_mer_stat,
+          here("data/kmer_analysis/unique/kallisto/kallisto_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+kallisto_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% kallisto_unique$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "kallisto")
+kallisto_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+kallisto_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+kallisto_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+kallisto_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+kallisto_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+## Salmon
+```{r salmon_unique_kmer}
+sal_tx_remove <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% salmon_unique$transcript_id) %>%
+  dplyr::filter(str_detect(seqnames, "^CHR")) %>%
+  as.data.frame()
+
+salmon_unique <- salmon_unique %>%
+  dplyr::filter(!transcript_id %in% sal_tx_remove$tx_id)
+
+yTx_salmon <- exonsBy(edb, filter = TxIdFilter(salmon_unique$transcript_id))
+
+yTxSeqs_salmon <- extractTranscriptSeqs(dna, yTx_salmon)
+
+salmon_kmer_df <- yTxSeqs_salmon %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+# Call head to make sure that we get 200 transcripts for each group!
+salmon_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/unique/salmon/salmon_seqs.txt"),
+              delim = "\n",
+              eol = "\n\n",
+              col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/unique
+
+cp ${loc}/salmon/salmon_seqs.txt ${loc}/salmon/salmon_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/salmon/salmon_mer_counts.jf -C ${loc}/salmon/salmon_seqs.fa
+    jellyfish histo ${loc}/salmon/salmon_mer_counts.jf > ${loc}/salmon/histos/salmon_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/salmon/salmon_mer_counts.jf > ${vol}/salmon/dumps/salmon_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/salmon/salmon_mer_counts.jf > ${loc}/salmon/stats/salmon_${i}_mer_counts_stats.txt
+    echo "salmon ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_salmon_unique, eval=TRUE}
+salmon_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/salmon/histos"))) {
+  salmon_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/salmon/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  salmon_mer_hist <- rbind(salmon_mer_hist, salmon_mer_add)
+}
+
+salmon_mer_hist <- salmon_mer_hist %>%
+  mutate(group = "salmon")
+
+write_csv(salmon_mer_hist,
+          here("data/kmer_analysis/unique/salmon/salmon_mer_hist.csv"))
+
+salmon_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/salmon/stats"))) {
+  salmon_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/salmon/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  salmon_mer_stat <- rbind(salmon_mer_stat, salmon_stat_add)
+}
+
+salmon_mer_stat <- salmon_mer_stat %>%
+  mutate(group = "salmon")
+
+write_csv(salmon_mer_stat,
+          here("data/kmer_analysis/unique/salmon/salmon_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+salmon_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% salmon_unique$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "salmon")
+salmon_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+salmon_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+salmon_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+salmon_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+salmon_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+## STAR
+```{r star_unique_kmer}
+star_unique <- star_unique %>%
+  dplyr::filter(transcript_id %in% gene_txp_anno$transcript_id)
+
+yTx_sa <- exonsBy(edb, filter = TxIdFilter(star_unique$transcript_id))
+
+yTxSeqs_sa <- extractTranscriptSeqs(dna, yTx_sa)
+
+star_kmer_df <- yTxSeqs_sa %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  mutate(transcript_id = paste0(">", transcript_id)) %>%
+  set_colnames(c("transcript_id", "sequence")) %>%
+  as_tibble()
+
+star_kmer_df %>%
+  head(200) %>%
+  write_delim(here("data/kmer_analysis/unique/star/star_seqs.txt"),
+            delim = "\n",
+            eol = "\n\n",
+            col_names = FALSE)
+
+# star_kmer_df %>%
+#   head(20) %>%
+#   write_delim(here("data/kmer_analysis/unique/star_test/star_seqs_test.txt"),
+#               delim = "\n",
+#               eol = "\n\n",
+#               col_names = FALSE)
+```
+
+```{sh eval=FALSE}
+#vol=/Volumes/Fast_T7/R_projects/MethodsChapter/data/sequence_analysis
+loc=/Users/konstantinosbogias/Documents/PhD/R_Projects/MethodsChapter/data/kmer_analysis/unique
+
+cp ${loc}/star/star_seqs.txt ${loc}/star/star_seqs.fa
+for i in {1..100}; do
+    jellyfish count -m ${i} -s 100M --output ${loc}/star/star_mer_counts.jf -C ${loc}/star/star_seqs.fa
+    jellyfish histo ${loc}/star/star_mer_counts.jf > ${loc}/star/histos/star_${i}_mer_counts_histo.txt
+    #jellyfish dump ${loc}/star/star_mer_counts.jf > ${vol}/star/dumps/star_${i}_mer_counts_dump.fa
+    jellyfish stats ${loc}/star/star_mer_counts.jf > ${loc}/star/stats/star_${i}_mer_counts_stats.txt
+    echo "sa ${i}_mer done"
+done
+```
+
+### Kmer data
+```{r kmer_plots_sa_unique, eval=TRUE}
+star_mer_hist <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/star/histos"))) {
+  star_mer_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/star/histos/"), file),
+    col_names = FALSE,
+    delim = " ") %>%
+    set_colnames(c("Repeats", "Frequency")) %>%
+    mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+             as.numeric())
+  
+  star_mer_hist <- rbind(star_mer_hist, star_mer_add)
+}
+
+star_mer_hist <- star_mer_hist %>%
+  mutate(group = "star")
+
+write_csv(star_mer_hist,
+          here("data/kmer_analysis/unique/star/star_mer_hist.csv"))
+
+star_mer_stat <- data.frame()
+for(file in list.files(here("data/kmer_analysis/unique/star/stats"))) {
+  star_stat_add <- read_delim(
+    paste0(here("data/kmer_analysis/unique/star/stats/"), file),
+    col_names = FALSE,
+    delim = " ") %>% 
+    as.data.frame() %>%
+    column_to_rownames("X1") %>%
+    mutate_if(is.character, as.numeric) %>%
+    mutate(Frequency = coalesce(X2, X3, X4, X5)) %>%
+    rownames_to_column("Type") %>%
+    dplyr::select("Type", "Frequency") %>%
+    mutate(Type = str_remove(Type, ":")) %>% 
+    dplyr::mutate(kmer_length = file %>%
+             str_extract("...mer") %>%
+             str_remove("_") %>% 
+             str_remove("_") %>% 
+             str_remove("mer") %>%
+                    as.numeric())
+  
+  star_mer_stat <- rbind(star_mer_stat, star_stat_add)
+}
+
+star_mer_stat <- star_mer_stat %>%
+  mutate(group = "star")
+
+write_csv(star_mer_stat,
+          here("data/kmer_analysis/unique/star/star_mer_stat.csv"))
+```
+
+### Kmer plotting
+Wanna try and find long genes with less distinct kmers, so low Distinct and Unique, with a high Total. Possibly a low Max count but a high Repeat number.
+```{r}
+star_lengths <- txp_gene_ensdb_lengths %>%
+  dplyr::filter(tx_id %in% star_unique$transcript_id) %>%
+  dplyr::select(tx_id, transcript_length, seqnames, strand, tx_biotype) %>%
+  dplyr::mutate(group = "star")
+star_lengths$transcript_length %>% summary()
+
+# Summarise kmer lengths
+star_mer_hist$kmer_length %>% table() %>% as.data.frame()
+
+star_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  ggplot(aes(x = kmer_length, y = Repeats)) + 
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7)
+
+star_mer_hist %>%
+  dplyr::filter(kmer_length >= 31) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ as.character(Repeats),
+             scales = "free") +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"))
+
+star_mer_hist %>%
+  dplyr::filter(kmer_length <= 20) %>%
+  dplyr::mutate(Repeats = paste0("Repeat ", as.character(Repeats))) %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = as.character(Repeats))) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  labs(x = "K-mer Length (bp)",
+       y = "Frequency",
+       fill = "Kmer") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 10),
+        axis.title = element_text(colour = "black", size = 12),
+        strip.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        legend.position = "none")
+
+star_mer_stat %>%
+  dplyr::filter(!Type == "Max_count") %>%
+  ggplot(aes(x = kmer_length, y = Frequency, fill = Type)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ Type) +
+  theme_bw()
+```
+
+# Plotting
+## figure 5
+```{r}
+lengths_df <- rbind(highcor_lengths,
+                    lowcor_lengths,
+                    hisat2_lengths,
+                    kallisto_lengths,
+                    star_lengths,
+                    salmon_lengths)
+
+lengths_by_method <- lengths_df %>%
+  dplyr::mutate(
+    group = case_when(
+      group == "highcor" ~ "Concordant",
+      group == "kallisto" ~ "Kallisto",
+      group == "star" ~ "STAR",
+      group == "hisat2" ~ "HISAT2",
+      group == "salmon" ~ "Salmon",
+      .default = "Discordant"
+    ),
+    group = factor(group, levels = c("Concordant",
+                                     "Discordant",
+                                     "HISAT2",
+                                     "Kallisto",
+                                     "Salmon",
+                                     "STAR"))) %>%
+  ggplot(aes(x = group, y = transcript_length)) +
+  geom_boxplot(fill = "lightblue") +
+  scale_y_log10() +
+  labs(x = "",
+       y = "Transcript Length (log10)") +
+  theme_bw()
+
+lengths_by_method %>%
+  ggsave(filename = "length_by_method_plot.png",
+         path = here("figures/kmer_analysis/unique/all_methods_plots/"),
+         device = "png",
+         height = 200,
+         width = 200,
+         units = "mm",
+         dpi = 400)
+
+txp_lengths_hist <- txp_gene_ensdb_lengths %>%
+  dplyr::select(tx_id, transcript_length) %>%
+  mutate(group = "All Transcripts") %>%
+  rbind(lengths_df %>% 
+          dplyr::filter(group == "lowcor") %>%
+          dplyr::select(tx_id, transcript_length) %>%
+          dplyr::mutate(group = "Discordant Transcripts")) %>%
+  ggplot(aes(x = log10(transcript_length))) +
+  geom_histogram(bins = 200) +
+  scale_x_continuous(limits = c(1, 6),
+                     breaks = c(1, 2, 3, 4, 5, 6)) +
+  labs(x = "Transcript Length (log10)",
+       y = "Frequency") +
+  facet_grid(group ~ ., switch = "y", scales = "free") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 14),
+        strip.background = element_rect(fill = "lightblue"),
+        strip.text = element_text(colour = "black", size = 14))
+
+txp_lengths_hist %>%
+  ggsave(filename = "discor_length_plot.png",
+         path = here("figures/kmer_analysis/unique/all_methods_plots/"),
+         device = "png",
+         height = 150,
+         width = 200,
+         units = "mm",
+         dpi = 400)
+
+# We can see that there is stuff all variation in frequency within groups
+stat_df <- rbind(highcor_mer_stat,
+                 lowcor_mer_stat,
+                 hisat2_mer_stat,
+                 kallisto_mer_stat,
+                 star_mer_stat,
+                 salmon_mer_stat)
+
+stat_df <- stat_df %>%
+  dplyr::mutate(kmer_length = case_when(
+    kmer_length == 0 ~ 100,
+    .default = kmer_length
+  ))
+
+group_names <- stat_df$group %>% unique()
+new_stat_df <- data.frame()
+stat_group_chunk <- data.frame()
+for(g in group_names) {
+  for(i in 1:100) {
+    stat_kmer_chunk <- stat_df %>%
+      dplyr::filter(kmer_length == i) %>%
+      dplyr::filter(group == g) %>%
+      dplyr::select(Type, Frequency) %>%
+      distinct() %>%
+      column_to_rownames("Type") %>%
+      t() %>%
+      as_tibble() %>%
+      mutate(Multiplicity = Total-Distinct,
+             Percent_Multi = Multiplicity/Total,
+             Percent_Unique = Unique/Total) %>%
+      t() %>%
+      set_colnames("Frequency") %>%
+      as.data.frame() %>%
+      rownames_to_column("Type") %>%
+      mutate(kmer_length = i, group = g)
+    
+    stat_group_chunk <- rbind(stat_group_chunk, stat_kmer_chunk)
+  }
+  new_stat_df <- rbind(new_stat_df, stat_group_chunk)
+}
+
+
+kmer_stat_plotting <- function(x, type, kmer = 31) {
+  x %>%
+    dplyr::filter(kmer_length >= kmer,
+                  Type == type) %>%
+    dplyr::mutate(
+      group = case_when(
+        group == "highcor" ~ "Concordant Transcripts",
+        group == "lowcor" ~ "Discordant Transcripts",
+        group == "hisat2" ~ "HISAT2",
+        group == "kallisto" ~ "Kallisto",
+        group == "star" ~ "STAR",
+        group == "salmon" ~ "Salmon"
+      ),
+      group = factor(group, levels = c("Concordant Transcripts",
+                                       "Discordant Transcripts",
+                                       "HISAT2",
+                                       "Kallisto",
+                                       "STAR",
+                                       "Salmon"))) %>%
+    ggplot(aes(x = kmer_length, y = Frequency)) +
+    geom_area(fill = "royalblue",
+              colour = "darkblue",
+              linewidth = 1,
+              alpha = 0.7) +
+    scale_y_log10() +
+    labs(x = "K-mer Length (bp)",
+         y = "Frequency") +
+    facet_grid(~ group) +
+    theme_bw() +
+    theme(strip.background = element_rect(fill = "lightblue"))
+}
+
+type_nms <- new_stat_df$Type %>% unique()
+
+for(i in type_nms) {
+  kmer_stat_plotting(new_stat_df, type = i) 
+  
+  ggsave(filename = paste0(i, "_kmer_length_freq.png"),
+         path = here("figures/kmer_analysis/unique/all_methods_plots_log10/"),
+         device = "png",
+         height = 150,
+         width = 300,
+         units = "mm",
+         dpi = 400)
+}
+
+
+hist_df <- rbind(lowcor_mer_hist,
+                 highcor_mer_hist,
+                 hisat2_mer_hist,
+                 kallisto_mer_hist,
+                 star_mer_hist,
+                 salmon_mer_hist)
+
+hist_df %>%
+  dplyr::filter(kmer_length == 31) %>%
+  dplyr::arrange(Repeats) %>%
+  ggplot(aes(x = Repeats, y = Frequency)) +
+  geom_area(fill = "royalblue",
+            colour = "darkblue",
+            linewidth = 1,
+            alpha = 0.7) +
+  facet_grid(~ group) +
+  theme_bw()
+```
+
+# Lollipop plot for kmers
+```{r percents_unique}
+percent_lolpop <- new_stat_df %>%
+  dplyr::filter(Type %in% c("Percent_Multi", "Percent_Unique")) %>%
+  dplyr::mutate(Percent = Frequency*100) %>%
+  dplyr::filter(kmer_length == 31) %>%
+  dplyr::mutate(group = case_when(
+    group == "highcor" ~ "Concordant",
+    group == "lowcor" ~ "Discordant",
+    group == "hisat2" ~ "HISAT2",
+    group == "kallisto" ~ "Kallisto",
+    group == "salmon" ~ "Salmon",
+    group == "star" ~ "STAR"
+  ),
+  Type = case_when(Type == "Percent_Multi" ~ "K-mer Repeats (%)",
+                   .default = "Unique K-mers (%)"),
+  group = factor(group, levels = rev(c("Concordant", "Discordant", 
+                                       "HISAT2", "Kallisto",
+                                       "Salmon", "STAR")))) %>%
+  ggplot(aes(x = Percent, y = group)) +
+  geom_point() +
+  geom_segment(aes(x = 0, xend = Percent, y = group, yend = group),
+               colour = "skyblue", linewidth = 1) +
+  geom_point(colour = "skyblue", size = 6) +
+  geom_point(colour = "royalblue", size = 4) +
+  geom_point(colour = "darkblue", size = 2) +
+  labs(x = "Percentage (%)") +
+  facet_wrap(~ Type) +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10),
+        strip.text = element_text(colour = "black", size = 11),
+        strip.background = element_rect(fill = "lightblue"),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+percent_lolpop %>%
+    ggsave(filename = "percent_lollipop.png",
+         path = here("figures/kmer_analysis/unique/lollipops/"),
+         device = "png",
+         height = 150,
+         width = 300,
+         units = "mm",
+         dpi = 400)
+```
+
+```{r multiplicity_unique}
+multi_lolpop <- new_stat_df %>%
+  dplyr::filter(Type == "Multiplicity") %>%
+  dplyr::mutate(Percent = Frequency*100) %>%
+  dplyr::filter(kmer_length == 31) %>%
+    dplyr::mutate(group = case_when(
+                  group == "highcor" ~ "Concordant",
+                  group == "lowcor" ~ "Discordant",
+                  group == "hisat2" ~ "HISAT2",
+                  group == "kallisto" ~ "Kallisto",
+                  group == "salmon" ~ "Salmon",
+                  group == "star" ~ "STAR"
+                ),
+                group = factor(group, levels = rev(c("Concordant", "Discordant", 
+                                                 "HISAT2", "Kallisto",
+                                                 "Salmon", "STAR")))) %>%
+  ggplot(aes(x = Frequency, y = group)) +
+    geom_segment(aes(x = 0, xend = Frequency, y = group, yend = group),
+               colour = "skyblue", linewidth = 1) +
+  geom_point(colour = "skyblue", size = 6) +
+  geom_point(colour = "royalblue", size = 4) +
+  geom_point(colour = "darkblue", size = 2) +
+  labs(x = "K-mer Repeat Frequency") +
+  scale_x_log10() +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10),
+        axis.text.y = element_text(face = "bold"),
+        strip.text = element_text(colour = "black", size = 11),
+        strip.background = element_rect(fill = "lightblue"),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+multi_lolpop %>%
+    ggsave(filename = "multi_lollipop.png",
+         path = here("figures/kmer_analysis/unique/lollipops/"),
+         device = "png",
+         height = 200,
+         width = 250,
+         units = "mm",
+         dpi = 400)
+```
+
+```{r unique-distinct_unique}
+uniq_dis_lolpop <- new_stat_df %>%
+  dplyr::filter(kmer_length == 31 & Type %in% c("Unique",
+                                                "Distinct",
+                                                "Total")) %>%
+  dplyr::mutate(group = case_when(
+                  group == "highcor" ~ "Concordant",
+                  group == "lowcor" ~ "Discordant",
+                  group == "hisat2" ~ "HISAT2",
+                  group == "kallisto" ~ "Kallisto",
+                  group == "salmon" ~ "Salmon",
+                  group == "star" ~ "STAR"
+                ),
+                group = factor(group, levels = rev(c("Concordant", "Discordant", 
+                                                 "HISAT2", "Kallisto",
+                                                 "Salmon", "STAR"))),
+                Type = factor(Type,
+                              levels = c("Unique", "Distinct", "Total"))) %>%
+  distinct() %>%
+  ggplot(aes(x = Frequency, y = group)) +
+  geom_segment(aes(x = 0, xend = Frequency,
+                   y = group, yend = group),
+               colour = "skyblue", linewidth = 1) +
+  geom_point(colour = "skyblue", size = 6) +
+  geom_point(colour = "royalblue", size = 4) +
+  geom_point(colour = "darkblue", size = 2) +
+  scale_x_log10() +
+  scale_x_continuous(limits = c(0, 8e5)) +
+  facet_wrap(~ Type, scales = "fixed") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10),
+        strip.text = element_text(colour = "black", size = 11),
+        strip.background = element_rect(fill = "lightblue"),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+uniq_dis_lolpop %>%
+    ggsave(filename = "uniq_dis_lollipop.png",
+         path = here("figures/kmer_analysis/unique/lollipops/"),
+         device = "png",
+         height = 200,
+         width = 500,
+         units = "mm",
+         dpi = 400)
+```
+
+### kmer_numbers
+```{r unique_numbers_unique}
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "highcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "lowcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "hisat2") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "kallisto") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "salmon") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Unique", kmer_length > 30) %>%
+  dplyr:: filter(group == "star") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+```
+
+
+```{r multiplicity_numbers_unique}
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "highcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "lowcor") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "hisat2") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "kallisto") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "salmon") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+
+new_stat_df %>%
+  distinct() %>%
+  dplyr::filter(Type == "Multiplicity", kmer_length > 30) %>%
+  dplyr:: filter(group == "star") %>%
+  dplyr::select("Frequency") %>%
+  summary()
+```
+

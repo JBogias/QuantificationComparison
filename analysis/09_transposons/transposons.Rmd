@@ -1,0 +1,163 @@
+---
+title: "Transposon annotation"
+author: "Justin Bogias"
+date: "2024-08-26"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Setup
+```{r}
+library(rmdformats)
+library(dplyr)
+library(readr)
+library(stringr)
+library(tidyr)
+library(magrittr)
+library(tibble)
+library(here)
+library(atena)
+library(ensembldb)
+library(AnnotationFilter)
+library(EnsDb.Hsapiens.v86)
+
+edb <- EnsDb.Hsapiens.v86
+```
+
+# Load Data
+Load the PC Loadings from before
+```{r}
+hisat2_loadings <- read_csv(here("data/hisat2_loadings.csv")) %>%
+  head(100)
+kallisto_loadings <- read_csv(here("data/kallisto_loadings.csv")) %>%
+  head(100)
+sa_loadings <- read_csv(here("data/salmon_loadings.csv")) %>%
+  head(100)
+star_loadings <- read_csv(here("data/star_loadings.csv")) %>%
+  head(100)
+```
+
+# Transposon Analysis
+## Get annotations for transposons in hg38 genome
+```{r}
+rmskid <- annotaTEs(genome = "hg38", parsefun = rmskidentity)
+rmskid
+```
+
+## Merge transposons with close proximity
+We can be more strict by merging transposons with 500bp between them
+```{r}
+rmskat <- annotaTEs(genome = "hg38",
+                    parsefun = rmskatenaparser,
+                    strict = FALSE,
+                    insert = 500)
+
+length(rmskat)
+mcols(rmskat)
+```
+
+## Get LINEs
+We can also get transposons of a specific class, here we can get LINEs
+```{r}
+rmskLINE <- getLINEs(rmskat, relLength = 0.8)
+length(rmskLINE)
+rmskLINE[1]
+```
+
+## Get LTRs
+We can also get LTRs
+```{r}
+rmskLTR <- getLTRs(rmskat, relLength = 0.8, fullLength = TRUE, partial = TRUE,
+                   otherLTR = TRUE)
+length(rmskLTR)
+rmskLTR[1]
+```
+
+## Get SINEs
+```{r}
+rmskSINE <- getSINEs(rmskat, relLength = 0.8)
+length(rmskSINE)
+rmskSINE[1]
+```
+
+# Get DNA transposons
+```{r}
+rmskDNA <- getDNAtransposons(rmskat, relLength = 0.8)
+length(rmskDNA)
+rmskDNA[1]
+```
+
+## Create gene annotations
+```{r}
+annot_gen <- GRanges(seqnames = rep("2L",8),
+                     ranges = IRanges(start = c(1,20,45,80,110,130,150,170),
+                                      width = c(10,20,35,10,5,15,10,25)),
+                     strand = "*", 
+                     type = rep("exon",8))
+```
+
+Set gene ids
+```{r}
+names(annot_gen) <- paste0("gene",c(rep(1,3),rep(2,4),rep(3,1)))
+annot_gen
+```
+
+## Transposon Hits in PC loadings
+### HISAT2
+```{r}
+yTx_hisat2 <- exonsBy(edb, filter = TxIdFilter(hisat2_loadings$transcript_id))
+
+seqlevelsStyle(yTx_hisat2) <- "UCSC"
+hisat2_transposon_hits <- findOverlaps(unlist(yTx_hisat2), rmskid)
+hisat2_transposon_hits_no <- countOverlaps(unlist(yTx_hisat2), rmskid)
+hisat2_transposon_hits_no[hisat2_transposon_hits_no > 0] %>%
+  names() %>% table() %>% sort() %>% sum()
+```
+
+### Kallisto
+```{r}
+yTx_kallisto <- exonsBy(edb, filter = TxIdFilter(kallisto_loadings$transcript_id))
+
+seqlevelsStyle(yTx_kallisto) <- "UCSC"
+kallisto_transposon_hits <- findOverlaps(unlist(yTx_kallisto), rmskid)
+kallisto_transposon_hits_no <- countOverlaps(unlist(yTx_kallisto), rmskid)
+kallisto_transposon_hits_no[kallisto_transposon_hits_no > 0] %>%
+  names() %>% table() %>% sort() %>% sum()
+```
+
+### Selective Alignment
+```{r}
+yTx_sa <- exonsBy(edb, filter = TxIdFilter(sa_loadings$transcript_id))
+
+seqlevelsStyle(yTx_sa) <- "UCSC"
+sa_transposon_hits <- findOverlaps(unlist(yTx_sa), rmskid)
+sa_transposon_hits_no <- countOverlaps(unlist(yTx_sa), rmskid)
+sa_transposon_hits_no[sa_transposon_hits_no > 0] %>% 
+  names() %>% table() %>% sort() %>% sum()
+```
+
+### STAR
+```{r}
+yTx_star <- exonsBy(edb, filter = TxIdFilter(star_loadings$transcript_id))
+
+seqlevelsStyle(yTx_star) <- "UCSC"
+star_transposon_hits <- findOverlaps(unlist(yTx_star), rmskid)
+star_transposon_hits_no <- countOverlaps(unlist(yTx_star), rmskid)
+star_transposon_hits_no[star_transposon_hits_no > 0] %>%
+  names() %>% table() %>% sort() %>% sum()
+```
+
+## Look specifically for simple repeats
+```{r}
+repeate_gr <- rmskid %>% 
+  as.data.frame() %>%  
+  dplyr::filter(str_detect(repFamily, "repeat")) %>% 
+  GRanges()
+
+```

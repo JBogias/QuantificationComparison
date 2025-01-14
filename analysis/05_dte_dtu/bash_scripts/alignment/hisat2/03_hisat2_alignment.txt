@@ -1,0 +1,19 @@
+#!/bin/bash -r
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=20:00:00
+#SBATCH --mem=35GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# conda env
+conda activate hisat2_rnaseq
+
+# Executing script
+bash /path/to/hisat2/03_hisat2_alignment.sh
+
+conda deactivate

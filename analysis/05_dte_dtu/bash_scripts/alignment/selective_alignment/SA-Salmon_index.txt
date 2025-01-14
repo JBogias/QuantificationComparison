@@ -1,0 +1,13 @@
+#!/bin/bash -l
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=01:30:00
+#SBATCH --mem=15GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/selective_alignment/SA-Salmon_index.sh

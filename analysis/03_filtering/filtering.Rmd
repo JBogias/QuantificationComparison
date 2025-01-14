@@ -1,0 +1,84 @@
+---
+title: "Filtering"
+author: "Justin Bogias"
+date: "2023-09-18"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+library(tximport)
+library(edgeR)
+library(limma)
+library(magrittr)
+library(ggplot2)
+library(tibble)
+library(here)
+```
+
+Some methods will be called "hisat2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+I have also defined several functions here for quality of life purposes
+```{r}
+source(here("R/get_filter_plot.R"))
+```
+
+# Filtering Plot
+## Load data and get individual plots
+We might be interested in the density of reads with each method. This gives us an overview of the gene and transcript counts in each
+```{r}
+h_f <- read_rds(
+  here("data/salmon_object_hisat2_grch38.rds")
+) %>% 
+  get_filter_plot(labels = c("a", " "),
+                  xlab_off = TRUE)
+
+k_f <- read_rds(
+  here("data/kallisto_object_HTR8_grch38_global.rds")
+) %>% 
+  get_filter_plot(labels = c("b", " "),
+                  xlab_off = TRUE)
+
+sal_f <- read_rds(
+  here("data/SA-SalmonObject_HTR8_grch38.rds")
+) %>% 
+  get_filter_plot(labels = c("c", " "),
+                  xlab_off = TRUE)
+
+star_f <- read_rds(
+  here("data/salmon_object_star_grch38.rds")
+) %>% 
+  get_filter_plot(labels = c("d", " "),
+                  xlab_off = FALSE)
+```
+
+## Combine all the filtering plots together
+```{r}
+filplots <- cowplot::plot_grid(h_f, k_f, sal_f, star_f,
+                               ncol = 1)
+
+ggsave(filename = "filtering.png",
+       plot = filplots,
+       path = here("figures/"),
+       width = 20,
+       height = 30,
+       units = "cm")
+```
+
+# Filtering Plot
+```{r}
+filplots
+```

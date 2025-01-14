@@ -1,0 +1,17 @@
+#!/bin/bash -l
+#SBATCH -p test
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --time=00:01:00
+#SBATCH --mem=1GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+module load arch/arch/haswell
+module load BEDTools
+module load mashmap
+
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/selective_alignment/getDecoyTranscriptome.sh

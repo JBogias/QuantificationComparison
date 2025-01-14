@@ -1,0 +1,7 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+Nov 10 13:20:42 ..... started STAR run
+Nov 10 13:20:42 ... starting to generate Genome files
+Nov 10 13:21:43 ... starting to sort Suffix Array. This may take a long time...
+Nov 10 13:21:56 ... sorting Suffix Array chunks and saving them to disk...
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/star_index.sh: line 20: 182012 Killed                  STAR --runThreadN ${cores} --runMode genomeGenerate --genomeDir ${index}/GRCh38 --genomeFastaFiles ${genome} --sjdbGTFfile ${annotation} --sjdbOverhang 99 --limitGenomeGenerateRAM 90043555797
+slurmstepd: error: Detected 1 oom-kill event(s) in step 11517529.batch cgroup. Some of your processes may have been killed by the cgroup out-of-memory handler.

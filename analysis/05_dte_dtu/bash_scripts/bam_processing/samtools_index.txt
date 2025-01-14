@@ -1,0 +1,18 @@
+#!/bin/bash -l
+
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=00:40:00
+#SBATCH --mem=35GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Load Module
+module load SAMtools/1.8
+
+# Executing script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_index.sh

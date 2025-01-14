@@ -1,0 +1,50 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(edgeR)
+Loading required package: limma
+> library(readr)
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu"
+> dir <- paste0(basedir, "/data/alignment/kallisto_global")
+> 
+> samples <- list.files(path = dir)
+> 
+> dirs <- file.path(dir, samples)
+> 
+> print("Starting import...")
+[1] "Starting import..."
+> 
+> kallisto <- catchKallisto(paths = dirs,
++                       verbose = TRUE)
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401116, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401117, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401118, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401119, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401120, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401121, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401122, 255044 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto_global/SRR13401123, 255044 transcripts, 100 bootstraps
+> 
+> write_rds(kallisto,
++           paste0(basedir, "/data/import/kallisto_object_HTR8_grch38_global.rds"))
+> 

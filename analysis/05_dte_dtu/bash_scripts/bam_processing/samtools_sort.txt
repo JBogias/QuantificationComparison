@@ -1,0 +1,19 @@
+#!/bin/bash
+
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=4:00:00
+#SBATCH --mem=35GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Load Module
+module load arch/arch/skylake
+module load SAMtools/1.8
+
+# Executing script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh

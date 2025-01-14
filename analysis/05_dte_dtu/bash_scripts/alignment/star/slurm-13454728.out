@@ -1,0 +1,41 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+May 12 14:31:37 ..... started STAR run
+May 12 14:31:38 ..... loading genome
+May 12 14:31:50 ..... started mapping
+May 12 14:51:08 ..... finished mapping
+May 12 14:51:08 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 170725 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 14:51:09 ..... started STAR run
+May 12 14:51:09 ..... loading genome
+May 12 14:51:28 ..... started mapping
+May 12 15:11:25 ..... finished mapping
+May 12 15:11:26 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 171866 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 15:11:27 ..... started STAR run
+May 12 15:11:27 ..... loading genome
+May 12 15:11:44 ..... started mapping
+May 12 15:29:26 ..... finished mapping
+May 12 15:29:27 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 173060 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 15:29:28 ..... started STAR run
+May 12 15:29:28 ..... loading genome
+May 12 15:29:49 ..... started mapping
+May 12 15:50:21 ..... finished mapping
+May 12 15:50:23 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 174116 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 15:50:23 ..... started STAR run
+May 12 15:50:24 ..... loading genome
+May 12 15:50:45 ..... started mapping
+May 12 16:11:19 ..... finished mapping
+May 12 16:11:22 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 175333 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 16:11:23 ..... started STAR run
+May 12 16:11:23 ..... loading genome
+May 12 16:11:48 ..... started mapping
+May 12 16:32:26 ..... finished mapping
+May 12 16:32:29 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/star/star_alignment_transcripts.sh: line 21: 176567 Segmentation fault      STAR --genomeDir ${index} --readFilesIn ${FQGZ} ${FQGZ/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --alignSJoverhangMin 7 --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+May 12 16:32:29 ..... started STAR run
+May 12 16:32:30 ..... loading genome
+May 12 16:32:55 ..... started mapping
+slurmstepd: error: *** JOB 13454728 ON r25-n9 CANCELLED AT 2022-05-13T10:31:54 DUE TO TIME LIMIT ***

@@ -1,0 +1,17 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+Nov 10 15:24:11 ..... started STAR run
+Nov 10 15:24:12 ..... loading genome
+Nov 10 15:24:41 ..... started mapping
+Nov 10 15:49:13 ..... finished mapping
+Nov 10 15:49:14 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/star_alignment.sh: line 14: 231357 Segmentation fault      STAR --genomeDir ${index}/GRCh38 --readFilesIn ${fqgz} ${fqgz/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+Nov 10 15:49:14 ..... started STAR run
+Nov 10 15:49:15 ..... loading genome
+Nov 10 15:49:56 ..... started mapping
+Nov 10 16:04:16 ..... finished mapping
+Nov 10 16:04:16 ..... started sorting BAM
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/star_alignment.sh: line 14: 232793 Segmentation fault      STAR --genomeDir ${index}/GRCh38 --readFilesIn ${fqgz} ${fqgz/_R1/_R2} --readFilesCommand zcat --outFilterType BySJout --outFilterMismatchNmax 999 --outSAMtype BAM SortedByCoordinate --outFileNamePrefix ${output}/"${SampleName}"_"${build}"_ --outSAMattrRGline ID:"${SampleName}" LB:library PL:illumina PU:machine SM:"${build}" --outSAMmapqUnique 60 --runThreadN ${cores}
+Nov 10 16:04:16 ..... started STAR run
+Nov 10 16:04:17 ..... loading genome
+Nov 10 16:04:51 ..... started mapping
+slurmstepd: error: *** JOB 11519146 ON r25-n8 CANCELLED AT 2021-11-10T16:13:25 ***

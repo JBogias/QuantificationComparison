@@ -1,0 +1,43 @@
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(tximport)
+> library(readr)
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment"
+> 
+> sa_files <- paste0(basedir, "/", list.files(basedir), "/quant.sf")
+> 
+> names(sa_files) <- list.files(basedir)
+> 
+> transCounts_sa <- tximport(sa_files,
++                                type = "salmon",
++                                txOut = TRUE,
++                                countsFromAbundance = "scaledTPM")
+Warning: ‘timedatectl’ indicates the non-existent timezone name ‘n/a’
+Warning: Your system is mis-configured: ‘/etc/localtime’ is not a symlink
+Warning: It is strongly recommended to set envionment variable TZ to ‘Australia/Adelaide’ (or equivalent)
+reading in files with read_tsv
+1 2 3 4 5 6 7 8 
+> 
+> write_rds(transCounts_sa,
++           "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/import/tximport_sa.rds")
+> 

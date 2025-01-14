@@ -1,0 +1,51 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(tximport)
+> library(readr)
+> library(magrittr)
+> library(tibble)
+> 
+> tx2gene <- read_csv("/hpcfs/users/a1666761/Refs/ref_annotations/tx2gene_grch38_103.csv.gz")
+Rows: 257222 Columns: 2
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (2): tx_id_version, gene_id
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/kallisto"
+> 
+> sa_files <- paste0(basedir, "/", list.files(basedir), "/quant.sf")
+> 
+> names(sa_files) <- list.files(basedir)
+> 
+> transCounts_sa <- tximport(sa_files,
++                                type = "salmon",
++                                txOut = FALSE,
++ 			       tx2gene = tx2gene,
++                                countsFromAbundance = "scaledTPM")
+Error in tximport(sa_files, type = "salmon", txOut = FALSE, tx2gene = tx2gene,  : 
+  all(file.exists(files)) is not TRUE
+Calls: tximport -> stopifnot
+Execution halted

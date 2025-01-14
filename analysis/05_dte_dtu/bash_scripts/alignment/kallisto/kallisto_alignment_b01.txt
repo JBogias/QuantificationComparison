@@ -1,0 +1,23 @@
+#!/bin/bash -l
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=04:00:00
+#SBATCH --mem=15GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Load module
+module load Anaconda3
+
+# Activate environment
+conda activate tech_chapter
+
+# Executing script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/alignment/kallisto/kallisto_alignment_b01.sh
+
+# Deactivate environment
+conda deactivate

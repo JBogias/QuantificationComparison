@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH --time=00:05:00
+#SBATCH --mem=4GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+module load R
+export R_LIBS_USER=/hpcfs/users/a1666761/R_Packages
+
+R < /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/import/sa/dtu_tximport_sa.R --no-save

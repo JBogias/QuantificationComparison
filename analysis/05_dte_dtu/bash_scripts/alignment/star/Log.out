@@ -1,0 +1,320 @@
+STAR version=2.7.3a
+STAR compilation time,server,dir=Tue Dec 15 14:36:12 ACDT 2020 l01:/dev/shm/fabien/STAR/2.7.3a/foss-2018b/STAR-2.7.3a/source
+##### Command Line:
+STAR --runThreadN 16 --runMode genomeGenerate --genomeDir /hpcfs/users/a1666761/Refs/STAR_index/GRCh38 --genomeFastaFiles /hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa --sjdbGTFfile /hpcfs/users/a1666761/Refs/ref_annotations/Homo_sapiens.GRCh38.103.gtf --sjdbOverhang 99
+##### Initial USER parameters from Command Line:
+###### All USER parameters from Command Line:
+runThreadN                    16     ~RE-DEFINED
+runMode                       genomeGenerate     ~RE-DEFINED
+genomeDir                     /hpcfs/users/a1666761/Refs/STAR_index/GRCh38     ~RE-DEFINED
+genomeFastaFiles              /hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa        ~RE-DEFINED
+sjdbGTFfile                   /hpcfs/users/a1666761/Refs/ref_annotations/Homo_sapiens.GRCh38.103.gtf     ~RE-DEFINED
+sjdbOverhang                  99     ~RE-DEFINED
+##### Finished reading parameters from all sources
+
+##### Final user re-defined parameters-----------------:
+runMode                           genomeGenerate
+runThreadN                        16
+genomeDir                         /hpcfs/users/a1666761/Refs/STAR_index/GRCh38
+genomeFastaFiles                  /hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa   
+sjdbGTFfile                       /hpcfs/users/a1666761/Refs/ref_annotations/Homo_sapiens.GRCh38.103.gtf
+sjdbOverhang                      99
+
+-------------------------------
+##### Final effective command line:
+STAR   --runMode genomeGenerate   --runThreadN 16   --genomeDir /hpcfs/users/a1666761/Refs/STAR_index/GRCh38   --genomeFastaFiles /hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa      --sjdbGTFfile /hpcfs/users/a1666761/Refs/ref_annotations/Homo_sapiens.GRCh38.103.gtf   --sjdbOverhang 99
+----------------------------------------
+
+Finished loading and checking parameters
+Feb 03 13:30:47 ... starting to generate Genome files
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 0  "1" chrStart: 0
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 1  "10" chrStart: 249036800
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 2  "11" chrStart: 382992384
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 3  "12" chrStart: 518258688
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 4  "13" chrStart: 651689984
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 5  "14" chrStart: 766246912
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 6  "15" chrStart: 873463808
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 7  "16" chrStart: 975699968
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 8  "17" chrStart: 1066139648
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 9  "18" chrStart: 1149501440
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 10  "19" chrStart: 1229979648
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 11  "2" chrStart: 1288699904
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 12  "20" chrStart: 1530920960
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 13  "21" chrStart: 1595408384
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 14  "22" chrStart: 1642332160
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 15  "3" chrStart: 1693188096
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 16  "4" chrStart: 1891631104
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 17  "5" chrStart: 2081947648
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 18  "6" chrStart: 2263613440
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 19  "7" chrStart: 2434531328
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 20  "8" chrStart: 2593914880
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 21  "9" chrStart: 2739142656
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 22  "MT" chrStart: 2877554688
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 23  "X" chrStart: 2877816832
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 24  "Y" chrStart: 3034054656
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 25  "KI270728.1" chrStart: 3091464192
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 26  "KI270727.1" chrStart: 3093561344
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 27  "KI270442.1" chrStart: 3094085632
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 28  "KI270729.1" chrStart: 3094609920
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 29  "GL000225.1" chrStart: 3095134208
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 30  "KI270743.1" chrStart: 3095396352
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 31  "GL000008.2" chrStart: 3095658496
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 32  "GL000009.2" chrStart: 3095920640
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 33  "KI270747.1" chrStart: 3096182784
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 34  "KI270722.1" chrStart: 3096444928
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 35  "GL000194.1" chrStart: 3096707072
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 36  "KI270742.1" chrStart: 3096969216
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 37  "GL000205.2" chrStart: 3097231360
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 38  "GL000195.1" chrStart: 3097493504
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 39  "KI270736.1" chrStart: 3097755648
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 40  "KI270733.1" chrStart: 3098017792
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 41  "GL000224.1" chrStart: 3098279936
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 42  "GL000219.1" chrStart: 3098542080
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 43  "KI270719.1" chrStart: 3098804224
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 44  "GL000216.2" chrStart: 3099066368
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 45  "KI270712.1" chrStart: 3099328512
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 46  "KI270706.1" chrStart: 3099590656
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 47  "KI270725.1" chrStart: 3099852800
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 48  "KI270744.1" chrStart: 3100114944
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 49  "KI270734.1" chrStart: 3100377088
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 50  "GL000213.1" chrStart: 3100639232
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 51  "GL000220.1" chrStart: 3100901376
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 52  "KI270715.1" chrStart: 3101163520
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 53  "GL000218.1" chrStart: 3101425664
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 54  "KI270749.1" chrStart: 3101687808
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 55  "KI270741.1" chrStart: 3101949952
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 56  "GL000221.1" chrStart: 3102212096
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 57  "KI270716.1" chrStart: 3102474240
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 58  "KI270731.1" chrStart: 3102736384
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 59  "KI270751.1" chrStart: 3102998528
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 60  "KI270750.1" chrStart: 3103260672
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 61  "KI270519.1" chrStart: 3103522816
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 62  "GL000214.1" chrStart: 3103784960
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 63  "KI270708.1" chrStart: 3104047104
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 64  "KI270730.1" chrStart: 3104309248
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 65  "KI270438.1" chrStart: 3104571392
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 66  "KI270737.1" chrStart: 3104833536
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 67  "KI270721.1" chrStart: 3105095680
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 68  "KI270738.1" chrStart: 3105357824
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 69  "KI270748.1" chrStart: 3105619968
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 70  "KI270435.1" chrStart: 3105882112
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 71  "GL000208.1" chrStart: 3106144256
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 72  "KI270538.1" chrStart: 3106406400
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 73  "KI270756.1" chrStart: 3106668544
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 74  "KI270739.1" chrStart: 3106930688
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 75  "KI270757.1" chrStart: 3107192832
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 76  "KI270709.1" chrStart: 3107454976
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 77  "KI270746.1" chrStart: 3107717120
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 78  "KI270753.1" chrStart: 3107979264
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 79  "KI270589.1" chrStart: 3108241408
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 80  "KI270726.1" chrStart: 3108503552
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 81  "KI270735.1" chrStart: 3108765696
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 82  "KI270711.1" chrStart: 3109027840
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 83  "KI270745.1" chrStart: 3109289984
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 84  "KI270714.1" chrStart: 3109552128
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 85  "KI270732.1" chrStart: 3109814272
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 86  "KI270713.1" chrStart: 3110076416
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 87  "KI270754.1" chrStart: 3110338560
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 88  "KI270710.1" chrStart: 3110600704
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 89  "KI270717.1" chrStart: 3110862848
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 90  "KI270724.1" chrStart: 3111124992
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 91  "KI270720.1" chrStart: 3111387136
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 92  "KI270723.1" chrStart: 3111649280
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 93  "KI270718.1" chrStart: 3111911424
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 94  "KI270317.1" chrStart: 3112173568
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 95  "KI270740.1" chrStart: 3112435712
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 96  "KI270755.1" chrStart: 3112697856
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 97  "KI270707.1" chrStart: 3112960000
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 98  "KI270579.1" chrStart: 3113222144
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 99  "KI270752.1" chrStart: 3113484288
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 100  "KI270512.1" chrStart: 3113746432
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 101  "KI270322.1" chrStart: 3114008576
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 102  "GL000226.1" chrStart: 3114270720
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 103  "KI270311.1" chrStart: 3114532864
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 104  "KI270366.1" chrStart: 3114795008
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 105  "KI270511.1" chrStart: 3115057152
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 106  "KI270448.1" chrStart: 3115319296
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 107  "KI270521.1" chrStart: 3115581440
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 108  "KI270581.1" chrStart: 3115843584
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 109  "KI270582.1" chrStart: 3116105728
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 110  "KI270515.1" chrStart: 3116367872
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 111  "KI270588.1" chrStart: 3116630016
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 112  "KI270591.1" chrStart: 3116892160
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 113  "KI270522.1" chrStart: 3117154304
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 114  "KI270507.1" chrStart: 3117416448
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 115  "KI270590.1" chrStart: 3117678592
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 116  "KI270584.1" chrStart: 3117940736
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 117  "KI270320.1" chrStart: 3118202880
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 118  "KI270382.1" chrStart: 3118465024
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 119  "KI270468.1" chrStart: 3118727168
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 120  "KI270467.1" chrStart: 3118989312
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 121  "KI270362.1" chrStart: 3119251456
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 122  "KI270517.1" chrStart: 3119513600
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 123  "KI270593.1" chrStart: 3119775744
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 124  "KI270528.1" chrStart: 3120037888
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 125  "KI270587.1" chrStart: 3120300032
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 126  "KI270364.1" chrStart: 3120562176
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 127  "KI270371.1" chrStart: 3120824320
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 128  "KI270333.1" chrStart: 3121086464
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 129  "KI270374.1" chrStart: 3121348608
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 130  "KI270411.1" chrStart: 3121610752
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 131  "KI270414.1" chrStart: 3121872896
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 132  "KI270510.1" chrStart: 3122135040
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 133  "KI270390.1" chrStart: 3122397184
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 134  "KI270375.1" chrStart: 3122659328
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 135  "KI270420.1" chrStart: 3122921472
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 136  "KI270509.1" chrStart: 3123183616
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 137  "KI270315.1" chrStart: 3123445760
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 138  "KI270302.1" chrStart: 3123707904
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 139  "KI270518.1" chrStart: 3123970048
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 140  "KI270530.1" chrStart: 3124232192
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 141  "KI270304.1" chrStart: 3124494336
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 142  "KI270418.1" chrStart: 3124756480
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 143  "KI270424.1" chrStart: 3125018624
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 144  "KI270417.1" chrStart: 3125280768
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 145  "KI270508.1" chrStart: 3125542912
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 146  "KI270303.1" chrStart: 3125805056
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 147  "KI270381.1" chrStart: 3126067200
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 148  "KI270529.1" chrStart: 3126329344
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 149  "KI270425.1" chrStart: 3126591488
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 150  "KI270396.1" chrStart: 3126853632
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 151  "KI270363.1" chrStart: 3127115776
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 152  "KI270386.1" chrStart: 3127377920
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 153  "KI270465.1" chrStart: 3127640064
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 154  "KI270383.1" chrStart: 3127902208
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 155  "KI270384.1" chrStart: 3128164352
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 156  "KI270330.1" chrStart: 3128426496
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 157  "KI270372.1" chrStart: 3128688640
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 158  "KI270548.1" chrStart: 3128950784
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 159  "KI270580.1" chrStart: 3129212928
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 160  "KI270387.1" chrStart: 3129475072
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 161  "KI270391.1" chrStart: 3129737216
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 162  "KI270305.1" chrStart: 3129999360
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 163  "KI270373.1" chrStart: 3130261504
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 164  "KI270422.1" chrStart: 3130523648
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 165  "KI270316.1" chrStart: 3130785792
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 166  "KI270340.1" chrStart: 3131047936
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 167  "KI270338.1" chrStart: 3131310080
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 168  "KI270583.1" chrStart: 3131572224
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 169  "KI270334.1" chrStart: 3131834368
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 170  "KI270429.1" chrStart: 3132096512
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 171  "KI270393.1" chrStart: 3132358656
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 172  "KI270516.1" chrStart: 3132620800
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 173  "KI270389.1" chrStart: 3132882944
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 174  "KI270466.1" chrStart: 3133145088
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 175  "KI270388.1" chrStart: 3133407232
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 176  "KI270544.1" chrStart: 3133669376
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 177  "KI270310.1" chrStart: 3133931520
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 178  "KI270412.1" chrStart: 3134193664
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 179  "KI270395.1" chrStart: 3134455808
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 180  "KI270376.1" chrStart: 3134717952
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 181  "KI270337.1" chrStart: 3134980096
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 182  "KI270335.1" chrStart: 3135242240
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 183  "KI270378.1" chrStart: 3135504384
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 184  "KI270379.1" chrStart: 3135766528
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 185  "KI270329.1" chrStart: 3136028672
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 186  "KI270419.1" chrStart: 3136290816
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 187  "KI270336.1" chrStart: 3136552960
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 188  "KI270312.1" chrStart: 3136815104
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 189  "KI270539.1" chrStart: 3137077248
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 190  "KI270385.1" chrStart: 3137339392
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 191  "KI270423.1" chrStart: 3137601536
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 192  "KI270392.1" chrStart: 3137863680
+/hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa : chr # 193  "KI270394.1" chrStart: 3138125824
+Estimated genome size=3337387968   3138387968   199000000
+GstrandBit=32
+Number of SA indices: 5891698134
+Feb 03 13:31:51 ... starting to sort Suffix Array. This may take a long time...
+Number of chunks: 59;   chunks size limit: 927120144 bytes
+Feb 03 13:32:05 ... sorting Suffix Array chunks and saving them to disk...
+Writing 638473776 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_13 ; empty space on disk = 503159996014592 bytes ... done
+Writing 725537968 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_0 ; empty space on disk = 503157583667200 bytes ... done
+Writing 822349248 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_5 ; empty space on disk = 503155012460544 bytes ... done
+Writing 799799536 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_4 ; empty space on disk = 503154052485120 bytes ... done
+Writing 830659752 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_11 ; empty space on disk = 503154052485120 bytes ... done
+Writing 912078512 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_2 ; empty space on disk = 503147923075072 bytes ... done
+Writing 761220208 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_8 ; empty space on disk = 503148049674240 bytes ... done
+Writing 702870440 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_6 ; empty space on disk = 503146378170368 bytes ... done
+Writing 761220608 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_12 ; empty space on disk = 503145115090944 bytes ... done
+Writing 843039680 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_15 ; empty space on disk = 503144570036224 bytes ... done
+Writing 915513920 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_7 ; empty space on disk = 503144767107072 bytes ... done
+Writing 617221088 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_1 ; empty space on disk = 503141979922432 bytes ... done
+Writing 887935104 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_10 ; empty space on disk = 503141759037440 bytes ... done
+Writing 726806280 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_14 ; empty space on disk = 503139757076480 bytes ... done
+Writing 818736232 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_9 ; empty space on disk = 503144512434176 bytes ... done
+Writing 750448008 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_3 ; empty space on disk = 503143622131712 bytes ... done
+Writing 751974344 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_16 ; empty space on disk = 503142258978816 bytes ... done
+Writing 670799584 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_17 ; empty space on disk = 503136554950656 bytes ... done
+Writing 893996152 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_23 ; empty space on disk = 503137384943616 bytes ... done
+Writing 767501096 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_31 ; empty space on disk = 503137063682048 bytes ... done
+Writing 679101272 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_22 ; empty space on disk = 503134517637120 bytes ... done
+Writing 790049016 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_21 ; empty space on disk = 503134391373824 bytes ... done
+Writing 923348600 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_24 ; empty space on disk = 503132697722880 bytes ... done
+Writing 746089376 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_20 ; empty space on disk = 503130293321728 bytes ... done
+Writing 710575720 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_19 ; empty space on disk = 503129648439296 bytes ... done
+Writing 914053600 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_26 ; empty space on disk = 503128264978432 bytes ... done
+Writing 902146840 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_28 ; empty space on disk = 503128066805760 bytes ... done
+Writing 751863376 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_27 ; empty space on disk = 503128066805760 bytes ... done
+Writing 898515744 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_18 ; empty space on disk = 503123573374976 bytes ... done
+Writing 890892408 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_30 ; empty space on disk = 503120107601920 bytes ... done
+Writing 871197824 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_25 ; empty space on disk = 503120270172160 bytes ... done
+Writing 907764448 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_29 ; empty space on disk = 503116489420800 bytes ... done
+Writing 797758016 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_32 ; empty space on disk = 503115491057664 bytes ... done
+Writing 865527632 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_33 ; empty space on disk = 503114496413696 bytes ... done
+Writing 750618656 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_36 ; empty space on disk = 503106269614080 bytes ... done
+Writing 908644224 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_37 ; empty space on disk = 503104439939072 bytes ... done
+Writing 804325544 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_38 ; empty space on disk = 503104439939072 bytes ... done
+Writing 744402136 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_34 ; empty space on disk = 503102131978240 bytes ... done
+Writing 735648744 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_35 ; empty space on disk = 503100261036032 bytes ... done
+Writing 617981320 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_44 ; empty space on disk = 503099084562432 bytes ... done
+Writing 798671672 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_39 ; empty space on disk = 503094812422144 bytes ... done
+Writing 916516816 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_42 ; empty space on disk = 503093399040000 bytes ... done
+Writing 787160672 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_40 ; empty space on disk = 503091136966656 bytes ... done
+Writing 803665736 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_43 ; empty space on disk = 503090082574336 bytes ... done
+Writing 853648240 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_47 ; empty space on disk = 503084272070656 bytes ... done
+Writing 803569512 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_41 ; empty space on disk = 503085849968640 bytes ... done
+Writing 923178264 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_46 ; empty space on disk = 503084277747712 bytes ... done
+Writing 794585424 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_45 ; empty space on disk = 503084446736384 bytes ... done
+Writing 862525256 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_49 ; empty space on disk = 503080926801920 bytes ... done
+Writing 658186296 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_53 ; empty space on disk = 503075306303488 bytes ... done
+Writing 894746832 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_48 ; empty space on disk = 503075939864576 bytes ... done
+Writing 572150904 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_54 ; empty space on disk = 503071614996480 bytes ...Writing 837749536 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_51 ; empty space on disk = 503071614996480 bytes ... done
+ done
+Writing 855747696 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_56 ; empty space on disk = 503069460762624 bytes ... done
+Writing 864740504 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_52 ; empty space on disk = 503068489961472 bytes ... done
+Writing 864866880 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_50 ; empty space on disk = 503066058084352 bytes ... done
+Writing 725545584 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_58 ; empty space on disk = 503064906571776 bytes ... done
+Writing 800620208 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_55 ; empty space on disk = 503058656882688 bytes ... done
+Writing 707023008 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA_57 ; empty space on disk = 503056199942144 bytes ... done
+Feb 03 13:57:37 ... loading chunks from disk, packing SA...
+Feb 03 13:58:57 ... finished generating suffix array
+Feb 03 13:58:57 ... generating Suffix Array index
+Feb 03 14:02:13 ... completed Suffix Array index
+Feb 03 14:02:13 ..... processing annotations GTF
+Processing pGe.sjdbGTFfile=/hpcfs/users/a1666761/Refs/ref_annotations/Homo_sapiens.GRCh38.103.gtf, found:
+		234393 transcripts
+		1460383 exons (non-collapsed)
+		389103 collapsed junctions
+Feb 03 14:02:23 ..... finished GTF processing
+Feb 03 14:02:23   Loaded database junctions from the GTF file: /hpcfs/users/a1666761/Refs/ref_annotations/Homo_sapiens.GRCh38.103.gtf: 389103 total junctions
+
+Feb 03 14:02:24   Finished preparing junctions
+Feb 03 14:02:24 ..... inserting junctions into the genome indices
+Feb 03 14:03:01   Finished SA search: number of new junctions=389046, old junctions=0
+Feb 03 14:03:43   Finished sorting SA indicesL nInd=154060434
+Genome size with junctions=3215808122  3138387968   77420154
+GstrandBit1=32   GstrandBit=32
+Feb 03 14:04:44   Finished inserting junction indices
+Feb 03 14:05:13   Finished SAi
+Feb 03 14:05:13 ..... finished inserting junctions into genome
+Feb 03 14:05:13 ... writing Genome to disk ...
+Writing 3215808122 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/Genome ; empty space on disk = 503084897435648 bytes ... done
+SA size in bytes: 24938754096
+Feb 03 14:05:17 ... writing Suffix Array to disk ...
+Writing 24938754096 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SA ; empty space on disk = 503084509151232 bytes ... done
+Feb 03 14:05:43 ... writing SAindex to disk
+Writing 8 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SAindex ; empty space on disk = 503083623366656 bytes ... done
+Writing 120 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SAindex ; empty space on disk = 503083623366656 bytes ... done
+Writing 1565873491 bytes into /hpcfs/users/a1666761/Refs/STAR_index/GRCh38/SAindex ; empty space on disk = 503083623366656 bytes ... done
+Feb 03 14:05:44 ..... finished successfully
+DONE: Genome generation, EXITING

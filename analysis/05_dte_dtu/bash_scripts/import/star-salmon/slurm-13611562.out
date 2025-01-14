@@ -1,0 +1,57 @@
+
+The following have been reloaded with a version change:
+  1) GLib/2.54.3 => GLib/2.64.1     2) cairo/1.14.12 => cairo/1.16.0
+
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(edgeR)
+Loading required package: limma
+> library(readr)
+> library(magrittr)
+> library(tibble)
+> 
+> source("/hpcfs/users/a1666761/210316_GDM_RNAseq/scripts/R/catchSalmon_TPMs.R")
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu"
+> dir <- paste0(basedir, "/data/quant/star_salmon_quant")
+> 
+> samples <- list.files(path = dir)
+> 
+> dirs <- file.path(dir, samples)
+> 
+> print("Starting import...")
+[1] "Starting import..."
+> 
+> SA <- catchSalmon_new(paths = dirs,
++                       verbose = TRUE)
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401116, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401117, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401118, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401119, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401120, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401121, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401122, 234393 transcripts, 0 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant/SRR13401123, 234393 transcripts, 0 bootstraps
+> 
+> write_rds(SA,
++           paste0(basedir, "/data/import/STAR_salmon/star_salmon_abundance_GRCh38.rds"))
+> 

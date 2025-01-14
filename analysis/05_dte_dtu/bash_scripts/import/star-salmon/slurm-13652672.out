@@ -1,0 +1,90 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(tximport)
+> library(tidyverse)
+Warning: ‘timedatectl’ indicates the non-existent timezone name ‘n/a’
+Warning: Your system is mis-configured: ‘/etc/localtime’ is not a symlink
+Warning: It is strongly recommended to set envionment variable TZ to ‘Australia/Adelaide’ (or equivalent)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
+✔ ggplot2 3.3.6     ✔ purrr   0.3.4
+✔ tibble  3.1.7     ✔ dplyr   1.0.9
+✔ tidyr   1.2.0     ✔ stringr 1.4.0
+✔ readr   2.1.2     ✔ forcats 0.5.1
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(readr)
+> library(magrittr)
+
+Attaching package: ‘magrittr’
+
+The following object is masked from ‘package:purrr’:
+
+    set_names
+
+The following object is masked from ‘package:tidyr’:
+
+    extract
+
+> library(tibble)
+> 
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/quant/star_salmon_quant"
+> tx2gene <- read_csv("/hpcfs/users/a1666761/Refs/ref_annotations/tx2gene_grch38_103.csv.gz")
+Rows: 257222 Columns: 2
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (2): tx_id_version, gene_id
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> tx2gene <- dplyr::mutate(tx2gene,
++ 			 tx_id = str_remove(tx2gene$tx_id_version, "\\..*"),
++ 			 tx_id_version = NULL)
+> 
+> tx2gene <- dplyr::relocate(tx2gene, tx_id, gene_id)
+> 
+> sa_files <- paste0(basedir, "/", list.files(basedir), "/quant.sf")
+> 
+> names(sa_files) <- list.files(basedir)
+> 
+> transCounts_sa <- tximport(sa_files,
++                            type = "salmon",
++                            txOut = TRUE,
++ 			   tx2gene = tx2gene,
++                            countsFromAbundance = "dtuScaledTPM")
+reading in files with read_tsv
+1 2 3 4 5 6 7 8 
+> 
+> cts <- transCounts_sa$counts[rowSums(transCounts_sa$counts) > 0,]
+> 
+> cts %>%
++    as.data.frame() %>%
++    rownames_to_column("transcript_id") %>%
++    as_tibble() %>%
++    write_csv("/hpcfs/users/a1666761/290921_trophoblast_dtu/data/import/STAR_salmon/dtu_cts_star_salmon.csv.gz")
+> 
+> write_rds(transCounts_sa,
++           "/hpcfs/users/a1666761/290921_trophoblast_dtu/data/import/STAR_salmon/dtu_tximport_star_salmon.rds")
+> 

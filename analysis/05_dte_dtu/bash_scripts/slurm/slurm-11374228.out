@@ -1,0 +1,7 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+Nov 02 16:24:08 ..... started STAR run
+Nov 02 16:24:08 ... starting to generate Genome files
+
+EXITING because of INPUT ERROR: could not open genomeFastaFile: /hpcfs/users/a1666761/Refs/ref_genomes/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+Nov 02 16:24:08 ...... FATAL ERROR, exiting

@@ -1,0 +1,128 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+Nov 10 15:12:09 ..... started STAR run
+Nov 10 15:12:09 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:09 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401116_R1.fastq.gz: No such file or directory
+Nov 10 15:12:09 ..... started STAR run
+Nov 10 15:12:09 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:09 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401116_R2.fastq.gz: No such file or directory
+Nov 10 15:12:09 ..... started STAR run
+Nov 10 15:12:09 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:09 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401117_R1.fastq.gz: No such file or directory
+Nov 10 15:12:09 ..... started STAR run
+Nov 10 15:12:09 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:09 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401117_R2.fastq.gz: No such file or directory
+Nov 10 15:12:09 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401118_R1.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401118_R2.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401119_R1.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401119_R2.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401120_R1.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401120_R2.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401121_R1.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401121_R2.fastq.gz: No such file or directory
+Nov 10 15:12:10 ..... started STAR run
+Nov 10 15:12:10 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:10 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401122_R1.fastq.gz: No such file or directory
+Nov 10 15:12:11 ..... started STAR run
+Nov 10 15:12:11 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:11 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401122_R2.fastq.gz: No such file or directory
+Nov 10 15:12:11 ..... started STAR run
+Nov 10 15:12:11 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:11 ...... FATAL ERROR, exiting
+gzip: /hpcfs/users/a1666761/290921_trophoblast_dtu/data/trimmed/SRR23401123_R1.fastq.gz: No such file or directory
+Nov 10 15:12:11 ..... started STAR run
+Nov 10 15:12:11 ..... loading genome
+
+EXITING because of FATAL ERROR: could not open genome file /hpcfs/users/a1666761/290921_trophoblast_dtu/Refs/STAR_index/GRCh38/genomeParameters.txt
+SOLUTION: check that the path to genome files, specified in --genomeDir is correct and the files are present, and have user read permsissions
+
+Nov 10 15:12:11 ...... FATAL ERROR, exiting

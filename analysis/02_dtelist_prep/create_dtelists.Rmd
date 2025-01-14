@@ -1,0 +1,143 @@
+---
+title: "Create DGELists"
+author: "Justin Bogias"
+date: "2023-09-19"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warnings = FALSE)
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+library(tibble)
+library(edgeR)
+library(tximport)
+library(magrittr)
+library(ggplot2)
+library(DT)
+library(here)
+```
+
+Some methods will be called "bowtie2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+```{r}
+source(here("R/get_dtelist.R"))
+```
+
+# Annotations
+Set up annotations here. These were made in the previous markdown and so the code used to generate these are shown there.
+
+## Transcript name key
+Load in the transcript ID and transcript label pairs here
+```{r}
+    tx_key <- read_csv(here("data/grch38_103_tx_name_key.csv.gz"))
+```
+
+## Transcript annotations
+Load in the transcript annotations here and join to the transcript ID-name key
+```{r}
+    tx_anno <- read_csv(
+      here("data/txp_gene_ensdb_lengths.csv.gz")
+    ) %>%
+      dplyr::mutate(transcript_id = tx_id) %>%
+      as.data.frame() %>%
+      column_to_rownames("tx_id") %>%
+      left_join(tx_key, by = "transcript_id")
+```
+
+# DTE and DTU
+The question we are asking in this study is, "does the choice and implenetation of an alignment-quantification algorithm inherently bias the RNA-seq counts and downstream statistical tests of differential expression and usage?"
+From what others have already observed in numerous benchmarking studies is that different methods perform differently, use different algorithms, and are even tailored to answering different biological questions about the data. However, the impacts have been infrequently tested for gene expression, and not even considered for transcript expression.
+My hypothesis is, "the usage of different alignment-quantification methods will not produce any major difference in gene or transcript expression and downstream statistical analysis."
+To tackle this hypothesis, I will conduct differential gene expression (DGE), differential transcript expression (DTE), and differential transcript usage (DTU). I will overlap the results to see how they compare at different perspectives.
+If there are any observable differences then I will interrogate the differences by comparing the relation of the variable genes with any biological differences to see if there is an overrepresentation of any biological bias.
+The four methods chosen are Kallisto, Salmon, Selective Alignment-Salmon, and Bowtie2-Salmon
+
+The code below details the differential expression and usage in each method
+
+## Salmon Selective Alignment
+```{r}
+salmon_dtelist <- read_rds(
+  here("data/SA-SalmonObject_HTR8_grch38.rds")
+  ) %>% 
+  get_dtelist() %T>%
+  write_rds(here("data/sa_dtelist.rds"))
+```
+
+## Kallisto
+```{r}
+kallisto_dtelist <- read_rds(
+  here("data/kallisto_object_HTR8_grch38_global.rds")
+  ) %>% 
+  get_dtelist() %T>%
+  write_rds(here("data/kallisto_dtelist.rds"))
+```
+
+## STAR
+```{r}
+star_dtelist <- read_rds(
+  here("data/salmon_object_star_grch38.rds")
+  ) %>%
+  get_dtelist() %T>%
+  write_rds(here("data/star_dtelist.rds"))
+```
+
+## Hisat2
+```{r}
+hisat2_dtelist <- read_rds(
+  here("data/salmon_object_hisat2_grch38.rds")
+  ) %>%
+  get_dtelist %T>%
+  write_rds(here("data/hisat2_dtelist.rds"))
+```
+
+# Plot library size
+```{r}
+star_dtelist$samples %>%
+  mutate(method = "STAR") %>%
+  rbind(salmon_dtelist$samples %>% mutate(method = "Salmon")) %>%
+  rbind(kallisto_dtelist$samples %>% mutate(method = "Kallisto")) %>%
+  rbind(hisat2_dtelist$samples %>% mutate(method = "HISAT2")) %>%
+  ggplot() +
+  geom_col(aes(x = method, y = lib.size),
+           colour = "black",
+           fill = "blue",
+           alpha = 0.75) +
+  labs(x = "", y = "Library Size (bp)") +
+  facet_wrap(~ ID, nrow = 2) +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black"),
+        axis.text = element_text(colour = "black"),
+        strip.text = element_text(colour = "black"),
+        strip.background = element_rect(fill = "lightblue"))
+```
+
+# Library size table
+```{r}
+lib_size_table <- star_dtelist$samples %>%
+  mutate(method = "STAR") %>%
+  rbind(salmon_dtelist$samples %>% mutate(method = "Salmon")) %>%
+  rbind(kallisto_dtelist$samples %>% mutate(method = "Kallisto")) %>%
+  rbind(hisat2_dtelist$samples %>% mutate(method = "HISAT2")) %>%
+  dplyr::arrange(lib.size) %>%
+  dplyr::select(ID, lib.size, group, method) %>%
+  as_tibble()
+
+write_csv(lib_size_table,
+          here("tables/library_size.csv"))
+
+DT::datatable(lib_size_table)
+```
+
+

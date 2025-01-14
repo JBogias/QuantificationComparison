@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -p batch
+#SBATCH -N 1
+#SBATCH -n 16
+#SBATCH --time=12:00:00
+#SBATCH --mem=15GB
+
+# Notification configuration
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=konstantinos.bogias@adelaide.edu.au
+
+# Load Modules
+#module load arch/arch/haswell
+#module load GCCcore/5.4.0
+#module load Salmon/1.1.0-foss-2016b
+
+# Executing script
+bash /hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/quant/star/salmon_alignment_mode.sh

@@ -1,0 +1,52 @@
+Module message: Setting OPENBLAS_NUM_THREADS to 1. Done. 
+
+R version 4.0.3 (2020-10-10) -- "Bunny-Wunnies Freak Out"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .libPaths(c("/hpcfs/users/a1666761/R_Packages", .libPaths()))
+> 
+> library(edgeR)
+Loading required package: limma
+> library(readr)
+> 
+> source("/hpcfs/users/a1666761/180912_NIH_RNAseq/R/catchSalmon_new.R")
+> 
+> basedir <- "/hpcfs/users/a1666761/290921_trophoblast_dtu"
+> dir <- paste0(basedir, "/data/alignment/selective_alignment")
+> 
+> samples <- list.files(path = dir)
+> 
+> dirs <- file.path(dir, samples)
+> 
+> print("Starting import...")
+[1] "Starting import..."
+> 
+> SA <- catchSalmon_new(paths = dirs,
++                       verbose = TRUE)
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401116, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401117, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401118, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401119, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401120, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401121, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401122, 240332 transcripts, 100 bootstraps
+Reading /hpcfs/users/a1666761/290921_trophoblast_dtu/data/alignment/selective_alignment/SRR13401123, 240332 transcripts, 100 bootstraps
+> 
+> write_rds(SA,
++           paste0(basedir, "/data/import/salmon_object_HTR8_grch38_global.rds"))
+> 

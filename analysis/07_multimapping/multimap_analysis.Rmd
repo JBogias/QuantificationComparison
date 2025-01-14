@@ -1,0 +1,3889 @@
+---
+title: "Multimapping Analysis"
+author: "Justin Bogias"
+date: "2023-09-19"
+output:
+  rmdformats::readthedown
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Load packages
+First we will load in the packages needed to execute this analysis
+```{r}
+library(rmdformats)
+library(tidyverse)
+library(magrittr)
+library(edgeR)
+library(ggplot2)
+library(viridis)
+library(ggfortify)
+library(PCAtools)
+library(AnnotationHub)
+library(ensembldb)
+library(pheatmap)
+library(cowplot)
+library(ggbeeswarm)
+library(grid)
+library(gridExtra)
+library(DT)
+library(tibble)
+library(EnsDb.Hsapiens.v86)
+library(here)
+```
+
+Some methods will be called "hisat2", this just means that bootstrapping estimates have not been taken into account. Nothing super special going on.
+
+I have also defined several functions here for quality of life purposes
+```{r}
+source(here("R/cor_funcs_variance.R"))
+```
+
+# Multi mapping analysis
+Each method handles multiple mapping reads differently
+-Salmon and SA will calculate the probability of a multiple mapped read to each of its mapped transcripts
+-Kallisto does not report multiple mapping pseudoalignments
+-Hisat2 will search for multiple alignments and only report the best one
+
+Seems like it really depends on what you wanna do which will dictate the method you use
+
+There are options in both Kallisto and Hisat2 that can handle multiple mappings differently I think
+
+Hisat2's handling may also be the reason why there are way less ambiguous reads in its run
+
+## Load Data
+### Annotations
+Load from 01_Annotations
+```{r load_data}
+txp_gene_ensdb_lengths <- read_csv(
+  here("data/annotations/txp_gene_ensdb_lengths.csv.gz")
+  )
+
+gene_txp_anno <- read_csv(here("data/annotations/grch38_103_df.csv.gz"))
+
+transcript_key <- dplyr::select(txp_gene_ensdb_lengths,
+                                c("transcript_id" = tx_id,
+                                  "transcript_name" = tx_name))
+```
+
+# DTELists
+Load from 02_dtelist_prep
+```{r}
+hisat2_dtelist <- read_rds(here("data/counts/hisat2_dtelist.rds"))
+kallisto_dtelist <- read_rds(here("data/counts/kallisto_dtelist.rds"))
+salmon_dtelist <- read_rds(here("data/counts/sa_dtelist.rds"))
+star_dtelist <- read_rds(here("data/counts/star_dtelist.rds"))
+```
+
+Since the high correlation group has at most 104 transcripts common across all samples, we just take the top 100 of each. This is also great for the low correlation group since the top 100 all have standard deviations above 2
+
+# Principal Component Loadings
+Load from 04_principal_component_analysis
+```{r}
+hisat2_loadings <- read_csv(
+  here("data/pca/loadings/hisat2_loadings.csv")
+  ) %>%
+  head(100)
+
+kallisto_loadings <- read_csv(
+  here("data/pca/loadings/kallisto_loadings.csv")
+  ) %>%
+  head(100)
+
+salmon_loadings <- read_csv(
+  here("data/pca/loadings/salmon_loadings.csv")
+  ) %>%
+  head(100)
+
+star_loadings <- read_csv(
+  here("data/pca/loadings/star_loadings.csv")
+  ) %>%
+  head(100)
+```
+
+# Add new tx groups ----    
+
+# Uniquely Identified Transcripts
+Load from 06_correlations
+```{r}
+hisat2_unique <- read_csv(here("data/unique_transcripts/hisat2_unique.csv")) %>%
+  dplyr::arrange(desc(hisat2_tx_dev)) %>%
+  head(100)
+
+kallisto_unique <- read_csv(here("data/unique_transcripts/kallisto_unique.csv")) %>%
+  dplyr::arrange(desc(kallisto_tx_dev)) %>%
+  head(100)
+
+salmon_unique <- read_csv(here("data/unique_transcripts/salmon_unique.csv")) %>%
+  dplyr::arrange(desc(salmon_tx_dev)) %>%
+  head(100)
+
+star_unique <- read_csv(here("data/unique_transcripts/star_unique.csv")) %>%
+  dplyr::arrange(desc(star_tx_dev)) %>%
+  head(100)
+
+hisat2_unique_incl <- read_csv(here("data/unique_transcripts/hisat2_unique_incl.csv.gz"))
+kallisto_unique_incl <- read_csv(here("data/unique_transcripts/kallisto_unique_incl.csv.gz"))
+salmon_unique_incl <- read_csv(here("data/unique_transcripts/salmon_unique_incl.csv.gz"))
+star_unique_incl <- read_csv(here("data/unique_transcripts/star_unique_incl.csv.gz"))
+```
+
+# Most and Least Variant
+Load from 04_pca (should be in 06_correlations, need to change at some point)
+```{r}
+lowcor <- read_rds(here("data/counts/most_sd_by_sample.rds"))
+highcor <- read_rds(here("data/counts/least_sd_by_sample.rds"))
+
+highcor_in_all <- intersect(highcor$SRR13401116$transcript_id, 
+                            highcor$SRR13401117$transcript_id) %>%
+  intersect(highcor$SRR13401118$transcript_id) %>% 
+  intersect(highcor$SRR13401119$transcript_id) %>% 
+  intersect(highcor$SRR13401120$transcript_id) %>%
+  intersect(highcor$SRR13401121$transcript_id) %>% 
+  intersect(highcor$SRR13401122$transcript_id) %>%
+  intersect(highcor$SRR13401123$transcript_id)
+
+lowcor_in_all <- intersect(lowcor$SRR13401116$transcript_id,
+                           lowcor$SRR13401117$transcript_id) %>% 
+  intersect(lowcor$SRR13401118$transcript_id) %>% 
+  intersect(lowcor$SRR13401119$transcript_id) %>% 
+  intersect(lowcor$SRR13401120$transcript_id) %>%
+  intersect(lowcor$SRR13401121$transcript_id) %>% 
+  intersect(lowcor$SRR13401122$transcript_id) %>% 
+  intersect(lowcor$SRR13401123$transcript_id)
+
+# Get most lowcor on average
+for(i in names(lowcor)) {
+  lowcor[[i]] <- dplyr::filter(
+    lowcor[[i]], transcript_id %in% lowcor_in_all
+  )
+}
+
+sd_df <- data.frame()
+for(i in lowcor_in_all) {
+  new_sd_row <- data.frame("transcript_id" = i)
+  for(j in names(lowcor)) {
+    new_nm <- paste0(j, "_stdev")
+    new_row_df <- dplyr::filter(lowcor[[j]], transcript_id == i) %>%
+      dplyr::select("transcript_id",
+                    "stdev")
+    colnames(new_row_df)[colnames(new_row_df) == "stdev"] <- new_nm
+    new_sd_row <- cbind(new_sd_row, new_row_df)
+    new_sd_row <- new_sd_row[, !duplicated(colnames(new_sd_row))]
+  }
+  sd_df <- rbind(sd_df, new_sd_row)
+}
+
+sd_df <- column_to_rownames(sd_df, "transcript_id")
+mean_sd_df <- apply(sd_df, 1, mean) %>%
+  as.data.frame() %>%
+  set_colnames("mean_sd") %>%
+  rownames_to_column("transcript_id")
+
+# sanity check
+left_join(rownames_to_column(sd_df, "transcript_id"),
+          mean_sd_df,
+          by = "transcript_id")
+
+# Now take the top
+lowcor <- mean_sd_df %>%
+  dplyr::arrange(desc(mean_sd)) %>%
+  head(100)
+
+# Get most highcor on average
+for(i in names(highcor)) {
+  highcor[[i]] <- dplyr::filter(
+    highcor[[i]], transcript_id %in% highcor_in_all
+  )
+}
+
+sd_df <- data.frame()
+for(i in highcor_in_all) {
+  new_sd_row <- data.frame("transcript_id" = i)
+  for(j in names(highcor)) {
+    new_nm <- paste0(j, "_stdev")
+    new_row_df <- dplyr::filter(highcor[[j]], transcript_id == i) %>%
+      dplyr::select("transcript_id",
+                    "stdev")
+    colnames(new_row_df)[colnames(new_row_df) == "stdev"] <- new_nm
+    new_sd_row <- cbind(new_sd_row, new_row_df)
+    new_sd_row <- new_sd_row[, !duplicated(colnames(new_sd_row))]
+  }
+  sd_df <- rbind(sd_df, new_sd_row)
+}
+
+sd_df <- column_to_rownames(sd_df, "transcript_id")
+mean_sd_df <- apply(sd_df, 1, mean) %>%
+  as.data.frame() %>%
+  set_colnames("mean_sd") %>%
+  rownames_to_column("transcript_id")
+
+# sanity check
+left_join(rownames_to_column(sd_df, "transcript_id"),
+          mean_sd_df,
+          by = "transcript_id")
+
+# Now take the top
+highcor <- mean_sd_df %>%
+  dplyr::arrange(desc(mean_sd)) %>%
+  head(100)
+```
+
+```{r}
+set_info <- function(x) {
+  x %>%
+    left_join(
+      dplyr::select(txp_gene_ensdb_lengths,
+                    "transcript_id" = "tx_id",
+                    "transcript_name" = "tx_name", 
+                    "transcript_biotype" = "tx_biotype",
+                    "gene_id", "transcript_length",
+                    "gc_content"),
+      by = "transcript_id")
+}
+sets_plot <- rbind(
+  set_info(highcor) %>% dplyr::mutate(group = "Concordant") %>%
+    dplyr::select(-"mean_sd"),
+  set_info(lowcor) %>% dplyr::mutate(group = "Discordant") %>%
+    dplyr::select(-"mean_sd"),
+  set_info(hisat2_unique) %>% dplyr::mutate(group = "HISAT2") %>%
+    dplyr::select(-"hisat2_tx_dev"),
+  set_info(kallisto_unique) %>% dplyr::mutate(group = "Kallisto") %>%
+    dplyr::select(-"kallisto_tx_dev"),
+  set_info(salmon_unique) %>% dplyr::mutate(group = "Salmon") %>%
+    dplyr::select(-"salmon_tx_dev"),
+  set_info(star_unique) %>% dplyr::mutate(group = "STAR") %>%
+    dplyr::select(-"star_tx_dev")
+)
+
+sets_plot %>%
+  ggplot(aes(x = group, y = gc_content)) +
+  geom_boxplot(colour = "black", fill = "lightblue") +
+  labs(x = "Group", y = "GC Content") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 14))
+
+sets_plot %>%
+  ggplot(aes(x = group, y = log2(transcript_length))) +
+  geom_boxplot(colour = "black", fill = "lightblue") +
+  labs(x = "Group", y = "Transcript length (bp)") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 14))
+
+sets_plot %>%
+  group_by(group, transcript_biotype) %>%
+  summarise(tx_biotype_n = n()) %>% 
+  dplyr::arrange(desc(tx_biotype_n)) %>%
+  ggplot(aes(y = str_replace_all(transcript_biotype, "_", " "),
+             x = tx_biotype_n)) +
+  geom_col(colour = "blue", fill = "lightblue") +
+  scale_fill_viridis_d() +
+  facet_wrap(~ group) +
+  labs(x = "Frequency (n)", y = "Transcript Biotype") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        strip.background = element_rect(fill = "lightblue"),
+        strip.text = element_text(colour = "black", size = 12))
+
+sets_plot %>%
+  group_by(group, transcript_biotype) %>%
+  summarise(tx_biotype_n = n()) %>%
+  dplyr::arrange(group) %>%
+  write_csv(here("data/groups_tx_biotype_n.csv"))
+
+sets_plot %>%
+  group_by(group) %>%
+  summarise(min = min(gc_content),
+            Q1 = quantile(gc_content, 0.25),
+            median = median(gc_content),
+            mean = mean(gc_content),
+            Q3 = quantile(gc_content, 0.75),
+            max = max(gc_content)) %>%
+  write_csv(here("data/groups_gc_content.csv"))
+
+sets_plot %>%
+  group_by(group) %>%
+  summarise(min = min(transcript_length),
+            Q1 = quantile(transcript_length, 0.25),
+            median = median(transcript_length),
+            mean = mean(transcript_length),
+            Q3 = quantile(transcript_length, 0.75),
+            max = max(transcript_length)) %>%
+  write_csv(here("data/groups_tx_length.csv"))
+```
+
+# Differential Transcript Eexpression Results
+Load from 05_dte_and_dtu
+```{r}
+hisat2_lmfit <- read_csv(here("data/differential_expression/hisat2_lmfit.csv"))
+hisat2_dte_exclusive <- read_csv(
+  here("data/differential_expression/hisat2_exclusive_tx.csv")
+  ) %>%
+  head(100)
+
+kallisto_lmfit <- read_csv(
+  here("data/differential_expression/kallisto_lmfit.csv")
+)
+kallisto_dte_exclusive <- read_csv(
+  here("data/differential_expression/kallisto_exclusive_tx.csv")
+  ) %>%
+  head(100)
+
+salmon_lmfit <- read_csv(here("data/differential_expression/sa_lmfit.csv"))
+salmon_dte_exclusive <- read_csv(
+  here("data/differential_expression/salmon_exclusive_tx.csv")
+) %>% head(100)
+
+star_lmfit <- read_csv(here("data/differential_expression/star_lmfit.csv"))
+star_dte_exclusive <- read_csv(
+  here("data/differential_expression/star_exclusive_tx.csv")
+  ) %>%
+  head(100)
+
+all_methods_tx_dte <- read_csv(
+  here("data/differential_expression/all_methods_tx.csv")
+) %>% head(100)
+```
+
+# Differential Transcript Usage Results
+Load from 05_dte_and_dtu
+```{r}
+hisat2_dtu <- read_csv(here("data/differential_usage/hisat2_DTU.csv"))
+hisat2_dtu_exclusive <- read_csv(
+  here("data/differential_usage/hisat2_exclusive_dtu.csv")
+  ) %>%
+  dplyr::rename("transcript_id" = Transcript) %>%
+  dplyr::arrange(txpFDR)
+
+kallisto_dtu <- read_csv(here("data/differential_usage/kallisto_DTU.csv"))
+kallisto_dtu_exclusive <- read_csv(
+  here("data/differential_usage/kallisto_exclusive_dtu.csv")
+  ) %>%
+  dplyr::rename("transcript_id" = Transcript) %>%
+  dplyr::arrange(txpFDR)
+
+star_dtu <- read_csv(here("data/differential_usage/star_DTU.csv"))
+star_dtu_exclusive <- read_csv(
+  here("data/differential_usage/star_exclusive_dtu.csv")
+  ) %>%
+  dplyr::rename("transcript_id" = Transcript) %>%
+  dplyr::arrange(txpFDR)
+
+salmon_dtu <- read_csv(here("data/differential_usage/salmon_DTU.csv"))
+salmon_dtu_exclusive <- read_csv(
+  here("data/differential_usage/salmon_exclusive_dtu.csv")
+  ) %>%
+  dplyr::rename("transcript_id" = Transcript) %>%
+  dplyr::arrange(txpFDR)
+
+all_methods_tx_dtu <- read_csv(
+  here("data/differential_usage/all_methods_tx.csv")
+  ) %>%
+  dplyr::rename("transcript_id" = Transcript) %>%
+  dplyr::arrange(txpFDR)
+```
+
+# Get Multi-Mapping Data
+## Quant Files
+```{r}
+hisat2_quant_files <- character()
+for(i in list.files(here("data/counts/HISAT2/hisat2_quant"))) {
+ quant <- paste0(here("data/counts/HISAT2/hisat2_quant/"), i, "/quant.sf")
+ hisat2_quant_files <- c(hisat2_quant_files, quant)
+}
+  
+sa_quant_files <- character()
+for(i in list.files(here("data/counts/SA/quant_files"))) {
+ quant <- paste0(here("data/counts/SA/quant_files/"), i)
+ sa_quant_files <- c(sa_quant_files, quant)
+}
+
+star_quant_files <- character()
+for(i in list.files(here("data/counts/STAR/quant_files"))) {
+ quant <- paste0(here("data/counts/STAR/quant_files/"), i)
+ star_quant_files <- c(star_quant_files, quant)
+}
+```
+
+## Ambiguous Read Files
+```{r}
+hisat2_ambig_files <- character()
+for(i in list.files(here("data/counts/HISAT2/hisat2_quant"))) {
+  ambig <- paste0(here("data/counts/HISAT2/hisat2_quant/"), i,
+                  "/aux_info/ambig_info.tsv")
+  hisat2_ambig_files <- c(hisat2_ambig_files, ambig)
+}
+
+sa_ambig_files <- character()
+for(i in list.files(here("data/counts/SA/ambig_info"))) {
+  ambig <- paste0(here("data/counts/SA/ambig_info/"), i)
+  sa_ambig_files <- c(sa_ambig_files, ambig)
+}
+
+star_ambig_files <- character()
+for(i in list.files(here("data/counts/STAR/ambig_info"))) {
+  ambig <- paste0(here("data/counts/STAR/ambig_info/"), i)
+  star_ambig_files <- c(star_ambig_files, ambig)
+}
+```
+
+## Set multi-mapping info function
+```{r}
+multi_mapping <- function(quant, ambig) {
+  x <- cbind(quant, ambig) %>%
+    mutate(sum = TPM + NumReads + UniqueCount + AmbigCount) %>%
+    dplyr::filter(sum > 0) %>%
+    dplyr::select(-sum) %>%
+    mutate(multimap = NumReads-UniqueCount) %>%
+    mutate(percent_est_from_multimap = multimap/NumReads,
+           percent_est_from_multimap = replace_na(percent_est_from_multimap, 0),
+           percent_ambigs_used = multimap/AmbigCount,
+           percent_ambigs_used = replace_na(percent_ambigs_used, 0),
+           status = case_when(
+             UniqueCount == NumReads & UniqueCount > 0 ~ "all_unique_reads",
+             UniqueCount == 0 & NumReads == 0 & AmbigCount > 0 ~ "all_ambig_no_counts",
+             multimap == NumReads ~ "all_ambig_reads",
+             AmbigCount != NumReads & UniqueCount != NumReads & percent_est_from_multimap > 0.5 ~ "more_multi",
+             AmbigCount != NumReads & UniqueCount != NumReads & percent_est_from_multimap < 0.5 ~ "more_unique",
+             percent_est_from_multimap == 0.5 ~ "equal"
+           ),
+           status = factor(status, levels = c("all_unique_reads",
+                                              "more_unique",
+                                              "equal",
+                                              "more_multi",
+                                              "all_ambig_reads")))
+  
+  return(x)
+}
+```
+
+## Get Multi-mapping for each Aligner
+### HISAT2
+```{r}
+hisat2_quants <- list()
+for(i in 1:length(hisat2_quant_files)) {
+  hisat2_quants[[i]] <- read_delim(
+    hisat2_quant_files[[i]]
+  )
+}
+names(hisat2_quants) <- list.files(here("data/counts/HISAT2/hisat2_quant"))
+
+hisat2_ambigs <- list()
+for(i in 1:length(hisat2_ambig_files)) {
+  hisat2_ambigs[[i]] <- read_tsv(
+    hisat2_ambig_files[[i]]
+  )
+}
+names(hisat2_ambigs) <- list.files(here("data/counts/HISAT2/hisat2_quant"))
+
+
+hisat2_multi_mapping <- list()
+for(i in 1:length(hisat2_quants)) {
+  hisat2_multi_mapping[[i]] <- multi_mapping(quant = hisat2_quants[[i]], 
+                                             ambig = hisat2_ambigs[[i]])
+}
+names(hisat2_multi_mapping) <- names(hisat2_quants)
+```
+
+### Selective Alignment
+```{r}
+sa_quants <- list()
+for(i in 1:length(sa_quant_files)) {
+  sa_quants[[i]] <- read_delim(
+    sa_quant_files[[i]]
+  )
+}
+names(sa_quants) <- basename(sa_quant_files) %>%
+  str_remove("quant_") %>%
+  str_remove(".sf")
+
+sa_ambigs <- list()
+for(i in 1:length(sa_ambig_files)) {
+  sa_ambigs[[i]] <- read_tsv(
+    sa_ambig_files[[i]]
+  )
+}
+names(sa_ambigs) <- basename(sa_ambig_files) %>%
+  str_remove("_ambig_info") %>%
+  str_remove(".tsv")
+
+sa_multi_mapping <- list()
+for(i in 1:length(sa_quants)) {
+  sa_multi_mapping[[i]] <- multi_mapping(quant = sa_quants[[i]], 
+                                         ambig = sa_ambigs[[i]])
+}
+names(sa_multi_mapping) <- names(sa_quants)
+```
+
+### STAR
+```{r}
+star_quants <- list()
+for(i in 1:length(star_quant_files)) {
+  star_quants[[i]] <- read_delim(
+    star_quant_files[[i]]
+  )
+}
+names(star_quants) <- basename(star_quant_files) %>%
+  str_remove("quant_") %>%
+  str_remove(".sf")
+
+star_ambigs <- list()
+for(i in 1:length(star_ambig_files)) {
+  star_ambigs[[i]] <- read_tsv(
+    star_ambig_files[[i]]
+  )
+}
+names(star_ambigs) <- basename(star_ambig_files) %>%
+  str_remove("_ambig_info") %>%
+  str_remove(".tsv")
+
+star_multi_mapping <- list()
+for(i in 1:length(star_quants)) {
+  star_multi_mapping[[i]] <- multi_mapping(quant = star_quants[[i]], 
+                                           ambig = star_ambigs[[i]])
+}
+names(star_multi_mapping) <- names(star_quants)
+```
+
+#### Determine STAR ambiguous reads after Salmon
+```{r}
+mm_rate <- numeric()
+for(i in names(star_multi_mapping)) {
+  sum_mm <- sum(star_multi_mapping[[i]][["multimap"]])
+  sum_un <- sum(star_multi_mapping[[i]][["UniqueCount"]])
+  rate <- sum_mm/(sum_mm+sum_un)
+  mm_rate <- c(mm_rate, rate)
+}
+multi_nms <- c("SRR13401116", "SRR13401117", "SRR13401118", "SRR13401119",
+               "SRR13401120", "SRR13401121", "SRR13401122", "SRR13401123")
+mm_rate_df <- data.frame(multi_nms, mm_rate)
+mean(mm_rate_df$mm_rate) # ~77.8%
+```
+
+#### STAR numbers directly from log files
+```{r}
+star_multimap <- c(8.14+0.08, 9.25+0.08, 9.98+0.1, 8.19+0.08, 
+                   9.6+0.08, 9.04+0.08, 8.06+0.08, 7.94+0.08)
+multi_nms <- c("SRR13401116", "SRR13401117", "SRR13401118", "SRR13401119",
+               "SRR13401120", "SRR13401121", "SRR13401122", "SRR13401123")
+star_multimap_rates <- data.frame(multi_nms, star_multimap) %>%
+  set_colnames(c("sample_id", "multimap_rate"))
+mean(star_multimap_rates$multimap_rate)
+```
+
+## Create Multi-Mapping Group Lists
+Create joined data frames
+```{r noncor_gtf}
+joined_df <- get_joined_samples(w = hisat2_dtelist,
+                                x = kallisto_dtelist,
+                                y = star_dtelist,
+                                z = salmon_dtelist,
+                                method_w = "Hisat2",
+                                method_x = "Kallisto",
+                                method_y = "STAR",
+                                method_z = "Salmon",
+                                sample = 1)
+
+cor_df <- joined_df
+cor_df$variance <- apply(cor_df[,-1], 1, var)
+```
+
+## Low Correlation Info
+```{r lowcor_ensdb}
+lowcor_ensdb <- cor_df %>%
+  dplyr::arrange(desc(variance)) %>%
+  head(200) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+
+lowcor_ensdb <- lowcor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+```
+
+## High Correlation Info
+```{r highcor_ensdb}
+highcor_ensdb <- cor_df %>%
+  dplyr::arrange(variance) %>%
+  head(200) %>%
+  dplyr::select(transcript_id) %>%
+  dplyr::left_join(gene_txp_anno,
+                   by = "transcript_id")
+
+highcor_ensdb <- highcor_ensdb %>%
+  dplyr::select(-score,
+                -phase) %>%
+  select_if(~ !all(is.na(.))) %>%
+  dplyr::select(-ccds_id,
+                -transcript_support_level,
+                -tag) %>%
+  drop_na()
+```
+
+## Group List Create
+```{r group_list}
+group_list <- list()
+group_list[["highcor"]] <- highcor
+group_list[["lowcor"]] <- lowcor
+
+group_list[["hisat2"]] <- hisat2_loadings
+group_list[["kallisto"]] <- kallisto_loadings
+group_list[["star"]] <- star_loadings
+group_list[["salmon"]] <- salmon_loadings
+
+group_list[["hisat2_unique"]] <- hisat2_unique
+group_list[["kallisto_unique"]] <- kallisto_unique
+group_list[["star_unique"]] <- star_unique
+group_list[["salmon_unique"]] <- salmon_unique
+
+group_list[["hisat2_unique_incl"]] <- head(hisat2_unique_incl, 100)
+group_list[["kallisto_unique_incl"]] <- head(kallisto_unique_incl, 100)
+group_list[["star_unique_incl"]] <- head(star_unique_incl, 100)
+group_list[["salmon_unique_incl"]] <- head(salmon_unique_incl, 100)
+
+group_list[["hisat2_dte"]] <- hisat2_dte_exclusive
+group_list[["salmon_dte"]] <- salmon_dte_exclusive
+group_list[["kallisto_dte"]] <- kallisto_dte_exclusive
+group_list[["star_dte"]] <- star_dte_exclusive
+group_list[["all_dte"]] <- all_methods_tx_dte
+
+group_list[["hisat2_dtu"]] <- hisat2_dtu_exclusive
+group_list[["kallisto_dtu"]] <- kallisto_dtu_exclusive
+group_list[["star_dtu"]] <- star_dtu_exclusive
+group_list[["salmon_dtu"]] <- salmon_dtu_exclusive
+group_list[["all_dtu"]] <- all_methods_tx_dtu
+```
+
+```{r multimap_list}
+multimap_list <- list()
+multimap_list[["HISAT2"]] <- hisat2_multi_mapping
+multimap_list[["STAR"]] <- star_multi_mapping
+multimap_list[["Salmon"]] <- sa_multi_mapping 
+```
+
+# Multi mapping plots
+
+### Prep for multi-map
+```{r prep}
+group_name <- names(group_list)
+method_name <- names(multimap_list)
+samp_nms <- names(multimap_list$HISAT2)
+
+multimap_group_list <- list()
+for(i in group_name) {
+  for(j in method_name) {
+    for(k in samp_nms) {
+      multimap_group_list[[i]][[j]][[k]] <- multimap_list[[j]][[k]] %>%
+        dplyr::mutate(transcript_id = str_remove(Name, "\\..*")) %>%
+        dplyr::filter(transcript_id %in% group_list[[i]]$transcript_id) 
+    }
+  }
+}
+```
+
+### Percentage of Multi-Mapping per Sample
+```{r perc_by_sample}
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    multi_map_plot <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      ggplot(aes(x = group, y = percent_est_from_multimap)) +
+      geom_quasirandom() +
+      ggtitle(paste0("Sample: ", j)) +
+      labs(x = "",
+           y = "Multi-Mapping Reads (%)") +
+      theme_bw() +
+      theme(axis.title = element_text(colour = "black", size = 14),
+            axis.text = element_text(colour = "black", size = 12),
+            plot.title = element_text(colour = "black", size = 15, 
+                                      face = "bold"))
+    
+    ggsave(plot = multi_map_plot,
+           filename = paste0(j, "_percent_mm.png"),
+           path = here(paste0("figures/multi_map/", i, "/percent_mm/")),
+           height = 150,
+           width = 175,
+           dpi = 400,
+           units = "mm", create.dir = TRUE)
+  }
+}
+```
+
+### Number of Reads by Method
+```{r numreads_group}
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    num_reads_plot <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      ggplot(aes(x = group, y = NumReads)) +
+      geom_quasirandom() +
+      ggtitle(paste0("Sample: ", i)) +
+      labs(x = "",
+           y = "Number of Reads") +
+      theme_bw() +
+      theme(axis.title = element_text(colour = "black", size = 14),
+            axis.text = element_text(colour = "black", size = 12),
+            plot.title = element_text(colour = "black", size = 15, 
+                                      face = "bold"))
+    
+    ggsave(plot = num_reads_plot,
+           filename = paste0(j, "_numreads.png"),
+           path = here(paste0("figures/multi_map/", i, "/number_of_reads/")),
+           height = 150,
+           width = 175,
+           dpi = 400,
+           units = "mm", create.dir = TRUE)
+  }
+}
+```
+
+### Counts by Method
+```{r counts_mm}
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ambig_counts_plot <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::select(group, UniqueCount, AmbigCount) %>%
+      pivot_longer(cols = c("UniqueCount", "AmbigCount"),
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(type = case_when(
+          type == "AmbigCount" ~ "Multi-Mapped",
+          type == "UniqueCount" ~ "Uniquely Mapped"),
+        type = factor(type, levels = c("Uniquely Mapped", "Multi-Mapped"))) %>%
+      dplyr::mutate(counts = counts + 1) %>%
+      ggplot(aes(x = type, y = log2(counts))) +
+      geom_quasirandom(colour = "darkorange") +
+      geom_boxplot(fill = "blue", colour = "black", width = 0.2,
+                   outlier.shape = NA) +
+      #scale_colour_manual(values = c("darkorange", "darkblue")) +
+      ggtitle(paste0("Sample: ", j)) +
+      labs(y = "Number of Reads (log2)",
+           x = "",
+           colour = "") +
+      facet_wrap(~ group) +
+      theme_bw() +
+      theme(axis.title = element_text(colour = "black", size = 14),
+            axis.text = element_text(colour = "black", size = 12),
+            strip.background = element_rect(fill = "lightblue"),
+            strip.text = element_text(colour = "black", size = 14))
+    
+    ggsave(plot = ambig_counts_plot,
+           filename = paste0(j, "_mm_counts.png"),
+           path = here(paste0("figures/multi_map/", i, "/counts_mm/")),
+           height = 200,
+           width = 300,
+           dpi = 400,
+           units = "mm", create.dir = TRUE)
+  }
+}
+```
+
+### Ambig Ratios by Method
+```{r mm_ratios_ambig}
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ambig_counts_plot <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::select(group, UniqueCount, AmbigCount) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(AmbigCount+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique Mappings",
+                      .default = "More Multiple Mappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique Mappings",
+                                                 "More Multiple Mappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      ggplot(aes(x = group, y = counts, colour = category)) +
+      geom_quasirandom() +
+      geom_boxplot(fill = "lightblue", colour = "black", width = 0.2,
+                   outlier.shape = NA) +
+      scale_y_continuous(limits = c(-20, 20)) +
+      scale_colour_manual(values = c("darkblue", "darkorange")) +
+      ggtitle(paste0("Sample: ", j)) +
+      labs(y = "Log2 Ratio (Unique mappings/Multiple mappings)",
+           x = "",
+           colour = "") +
+      #facet_wrap(~ group) +
+      theme_bw() +
+      theme(axis.title = element_text(colour = "black", size = 12),
+            axis.text = element_text(colour = "black", size = 12),
+            strip.background = element_rect(fill = "lightblue"),
+            strip.text = element_text(colour = "black", size = 14))
+    
+    ggsave(plot = ambig_counts_plot,
+           filename = paste0(j, "_mm_ratios.png"),
+           path = here(paste0("figures/multi_map/", i, "/ratios_mm/")),
+           height = 200,
+           width = 300,
+           dpi = 400,
+           units = "mm", create.dir = TRUE)
+  }
+}
+
+for(j in samp_nms) {
+  ratio_df <- data.frame()
+  for(i in group_name[7:10]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, AmbigCount) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(AmbigCount+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique" ~ "HISAT2",
+        i == "kallisto_unique" ~ "Kallisto",
+        i == "star_unique" ~ "STAR",
+        i == "salmon_unique" ~ "Salmon"
+      ))
+    ratio_df <- rbind(ratio_df, ratio_mm)
+  }
+  ratio_plot <- ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(y = "Log2 Ratio (Unique mappings/Multiple mappings)",
+         x = "",
+         colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_text(colour = "black", size = 18),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  ggsave(plot = ratio_plot,
+         filename = paste0(j, "_mm_ratios.png"),
+         path = here(paste0("figures/multi_map/all_groups_ratio/")),
+         height = 280,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+```
+
+```{r figure5_ambig}
+for(j in samp_nms) {
+  # First do concordant and discordant
+  cd_ratio_df <- data.frame()
+  for(i in group_name[1:2]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, AmbigCount) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(AmbigCount+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2" ~ "Top Negative\nPC1 Loadings",
+        i == "kallisto" ~ "Top Negative\nPC2 Loadings",
+        i == "star" ~ "Top Positive\nPC2 Loadings",
+        i == "salmon" ~ "Top Negative\nPC5 Loadings"
+      ))
+    cd_ratio_df <- rbind(cd_ratio_df, ratio_mm)
+  }
+  cd_ratio_plot <- cd_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 2) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.position = "none",
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  # Then do PC loadings
+  pc_ratio_df <- data.frame()
+  for(i in group_name[7:10]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, AmbigCount) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(AmbigCount+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique" ~ "HISAT2",
+        i == "kallisto_unique" ~ "Kallisto",
+        i == "star_unique" ~ "STAR",
+        i == "salmon_unique" ~ "Salmon"
+      ))
+    pc_ratio_df <- rbind(pc_ratio_df, ratio_mm)
+  }
+  
+  pc_ratio_plot <- pc_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    #ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  fig_leg <- cowplot::get_legend(pc_ratio_plot)
+  
+  ylab <- textGrob("Log2 Ratio (Unique mappings/Multiple mappings)",
+                 gp = gpar(fontface = "bold",
+                           col = "black",
+                           fontsize = 20),
+                 rot = 90)
+
+  plot_joined <- cowplot::plot_grid(
+    cowplot::plot_grid(cd_ratio_plot,
+                       pc_ratio_plot + theme(legend.position = "none"),
+                       ncol = 1,
+                       labels = c("A)", "B)")),
+    fig_leg,
+    nrow = 1,
+    rel_widths = c(1, 0.15))
+  
+  fig_5 <- grid.arrange(arrangeGrob(plot_joined, left = ylab))
+  
+  ggsave(plot = fig_5,
+         filename = paste0(j, "_ratios_ambig_fig5.png"),
+         path = here(paste0("figures/chapter_figures/figure5_ratios")),
+         height = 340,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+
+```
+
+### Multi Ratios by Method
+```{r mm_ratios_multi}
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ambig_counts_plot <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique Mappings",
+                      .default = "More Multiple Mappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique Mappings",
+                                                 "More Multiple Mappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      ggplot(aes(x = group, y = counts, colour = category)) +
+      geom_quasirandom() +
+      geom_boxplot(fill = "lightblue", colour = "black", width = 0.2,
+                   outlier.shape = NA) +
+      scale_y_continuous(limits = c(-20, 20)) +
+      scale_colour_manual(values = c("darkblue", "darkorange")) +
+      ggtitle(paste0("Sample: ", j)) +
+      labs(y = "Log2 Ratio (Unique mappings/Multiple mappings)",
+           x = "",
+           colour = "") +
+      #facet_wrap(~ group) +
+      theme_bw() +
+      theme(axis.title = element_text(colour = "black", size = 12),
+            axis.text = element_text(colour = "black", size = 12),
+            strip.background = element_rect(fill = "lightblue"),
+            strip.text = element_text(colour = "black", size = 14))
+    
+    ggsave(plot = ambig_counts_plot,
+           filename = paste0(j, "_mm_ratios_multi.png"),
+           path = here(paste0("figures/multi_map/", i, "/ratios_mm/")),
+           height = 150,
+           width = 175,
+           dpi = 400,
+           units = "mm", create.dir = TRUE)
+  }
+}
+
+for(j in samp_nms) {
+  ratio_df <- data.frame()
+  for(i in group_name[7:10]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique" ~ "HISAT2",
+        i == "kallisto_unique" ~ "Kallisto",
+        i == "star_unique" ~ "STAR",
+        i == "salmon_unique" ~ "Salmon"
+      ),
+      tx_group = factor(tx_group,
+                        levels = c("Concordant Transcripts",
+                                   "Discordant Transcripts",
+                                   "HISAT2",
+                                   "Kallisto",
+                                   "STAR",
+                                   "Salmon"))) %>%
+      dplyr::filter(!counts == 0)
+    ratio_df <- rbind(ratio_df, ratio_mm)
+  }
+  ratio_plot <- ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(y = "Log2 Ratio (Unique mappings/Multiple mappings)",
+         x = "",
+         colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_text(colour = "black", size = 18),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  ggsave(plot = ratio_plot,
+         filename = paste0(j, "_mm_multi_ratios.png"),
+         path = here(paste0("figures/multi_map/all_groups_ratio/")),
+         height = 280,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+```
+
+# Table S5
+```{r table_s5a}
+hisat2_mm <- rbind(
+  multimap_group_list$highcor$HISAT2$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Concordant", method = "HISAT2"),
+  multimap_group_list$lowcor$HISAT2$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Discordant", method = "HISAT2"),
+  multimap_group_list$hisat2_unique$HISAT2$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "HISAT2", method = "HISAT2"),
+  multimap_group_list$kallisto_unique$HISAT2$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Kallisto", method = "HISAT2"),
+  multimap_group_list$salmon_unique$HISAT2$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Salmon", method = "HISAT2"),
+  multimap_group_list$star_unique$HISAT2$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "STAR", method = "HISAT2")
+) %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_name")) %>%
+  dplyr::select(transcript_id, transcript_name, NumReads, 
+                UniqueCount, AmbigCount, multimap,
+                percent_est_from_multimap, status, group, method)
+
+colnames(hisat2_mm) <- c("Transcript ID", "Transcript Name", "Raw Counts",
+                         "Unique Reads", "Ambiguous Reads",
+                         "Multi-Mapped Reads", "Percent of Reads from Ambig",
+                         "Status", "Group", "Method")
+
+write_csv(hisat2_mm, here("tables/tbl_s5a_hisat2_mm.csv"))
+```
+
+```{r table_s5b}
+salmon_mm <- rbind(
+  multimap_group_list$highcor$Salmon$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Concordant", method = "Salmon"),
+  multimap_group_list$lowcor$Salmon$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Discordant", method = "Salmon"),
+  multimap_group_list$hisat2_unique$Salmon$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "HISAT2", method = "Salmon"),
+  multimap_group_list$kallisto_unique$Salmon$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Kallisto", method = "Salmon"),
+  multimap_group_list$salmon_unique$Salmon$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Salmon", method = "Salmon"),
+  multimap_group_list$star_unique$Salmon$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "STAR", method = "Salmon")
+) %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_name")) %>%
+  dplyr::select(transcript_id, transcript_name, NumReads, 
+                UniqueCount, AmbigCount, multimap,
+                percent_est_from_multimap, status, group, method)
+
+colnames(salmon_mm) <- c("Transcript ID", "Transcript Name", "Raw Counts",
+                         "Unique Reads", "Ambiguous Reads",
+                         "Multi-Mapped Reads", "Percent of Reads from Ambig",
+                         "Status", "Group", "Method")
+
+write_csv(salmon_mm, here("tables/tbl_s5b_salmon_mm.csv"))
+```
+
+```{r table_s5c}
+star_mm <- rbind(
+  multimap_group_list$highcor$STAR$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Concordant", method = "STAR"),
+  multimap_group_list$lowcor$STAR$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Discordant", method = "STAR"),
+  multimap_group_list$hisat2_unique$STAR$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "HISAT2", method = "STAR"),
+  multimap_group_list$kallisto_unique$STAR$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Kallisto", method = "STAR"),
+  multimap_group_list$salmon_unique$STAR$SRR13401116 %>% 
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "Salmon", method = "STAR"),
+  multimap_group_list$star_unique$STAR$SRR13401116 %>%
+    dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status) %>%
+    dplyr::mutate(group = "STAR", method = "STAR")
+) %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_name")) %>%
+  dplyr::select(transcript_id, transcript_name, NumReads, 
+                UniqueCount, AmbigCount, multimap,
+                percent_est_from_multimap, status, group, method)
+
+colnames(star_mm) <- c("Transcript ID", "Transcript Name", "Raw Counts",
+                         "Unique Reads", "Ambiguous Reads",
+                         "Multi-Mapped Reads", "Percent of Reads from Ambig",
+                         "Status", "Group", "Method")
+
+write_csv(star_mm, here("tables/tbl_s5c_star_mm.csv"))
+```
+
+## All samples table
+```{r}
+all_samp_mm <- data.frame()
+for(i in names(multimap_group_list$highcor$Salmon)) {
+  hisat2_mm <- rbind(
+    multimap_group_list$highcor$HISAT2[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Concordant", method = "HISAT2"),
+    multimap_group_list$lowcor$HISAT2[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Discordant", method = "HISAT2"),
+    multimap_group_list$hisat2_unique$HISAT2[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "HISAT2", method = "HISAT2"),
+    multimap_group_list$kallisto_unique$HISAT2[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Kallisto", method = "HISAT2"),
+    multimap_group_list$salmon_unique$HISAT2[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Salmon", method = "HISAT2"),
+    multimap_group_list$star_unique$HISAT2[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "STAR", method = "HISAT2")
+  ) %>%
+    left_join(dplyr::select(gene_txp_anno,
+                            "transcript_id", "transcript_name")) %>%
+    dplyr::select(transcript_id, transcript_name, NumReads, 
+                  UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status, group, method)
+  
+  colnames(hisat2_mm) <- c("Transcript ID", "Transcript Name", "Raw Counts",
+                           "Unique Reads", "Ambiguous Reads",
+                           "Multi-Mapped Reads", "Percent of Reads from Ambig",
+                           "Status", "Group", "Method")
+  
+  salmon_mm <- rbind(
+    multimap_group_list$highcor$Salmon[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Concordant", method = "Salmon"),
+    multimap_group_list$lowcor$Salmon[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Discordant", method = "Salmon"),
+    multimap_group_list$hisat2_unique$Salmon[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "HISAT2", method = "Salmon"),
+    multimap_group_list$kallisto_unique$Salmon[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Kallisto", method = "Salmon"),
+    multimap_group_list$salmon_unique$Salmon[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Salmon", method = "Salmon"),
+    multimap_group_list$star_unique$Salmon[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "STAR", method = "Salmon")
+  ) %>%
+    left_join(dplyr::select(gene_txp_anno,
+                            "transcript_id", "transcript_name")) %>%
+    dplyr::select(transcript_id, transcript_name, NumReads, 
+                  UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status, group, method)
+  
+  colnames(salmon_mm) <- c("Transcript ID", "Transcript Name", "Raw Counts",
+                           "Unique Reads", "Ambiguous Reads",
+                           "Multi-Mapped Reads", "Percent of Reads from Ambig",
+                           "Status", "Group", "Method")
+  
+  star_mm <- rbind(
+    multimap_group_list$highcor$STAR[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Concordant", method = "STAR"),
+    multimap_group_list$lowcor$STAR[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Discordant", method = "STAR"),
+    multimap_group_list$hisat2_unique$STAR[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "HISAT2", method = "STAR"),
+    multimap_group_list$kallisto_unique$STAR[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Kallisto", method = "STAR"),
+    multimap_group_list$salmon_unique$STAR[[i]] %>% 
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "Salmon", method = "STAR"),
+    multimap_group_list$star_unique$STAR[[i]] %>%
+      dplyr::select(transcript_id, NumReads, UniqueCount, AmbigCount, multimap,
+                    percent_est_from_multimap, status) %>%
+      dplyr::mutate(group = "STAR", method = "STAR")
+  ) %>%
+    left_join(dplyr::select(gene_txp_anno,
+                            "transcript_id", "transcript_name")) %>%
+    dplyr::select(transcript_id, transcript_name, NumReads, 
+                  UniqueCount, AmbigCount, multimap,
+                  percent_est_from_multimap, status, group, method)
+  
+  colnames(star_mm) <- c("Transcript ID", "Transcript Name", "Raw Counts",
+                         "Unique Reads", "Ambiguous Reads",
+                         "Multi-Mapped Reads", "Percent of Reads from Ambig",
+                         "Status", "Group", "Method")
+  
+  samp_mm <- rbind(hisat2_mm, salmon_mm, star_mm) %>%
+    dplyr::mutate("Sample" = i)
+  
+  all_samp_mm <- rbind(all_samp_mm, samp_mm)
+}
+```
+
+# Expanded Table S5
+```{r}
+DT::datatable(all_samp_mm)
+```
+
+```{r figure5_multi}
+for(j in samp_nms) {
+  # First do concordant and discordant
+  cd_ratio_df <- data.frame()
+  for(i in group_name[1:2]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique" ~ "HISAT2",
+        i == "kallisto_unique" ~ "Kallisto",
+        i == "star_unique" ~ "STAR",
+        i == "salmon_unique" ~ "Salmon"
+      ),
+      tx_group = factor(tx_group,
+                        levels = c("Concordant Transcripts",
+                                   "Discordant Transcripts",
+                                   "HISAT2",
+                                   "Kallisto",
+                                   "STAR",
+                                   "Salmon"))) %>%
+      dplyr::filter(!counts == 0)
+    cd_ratio_df <- rbind(cd_ratio_df, ratio_mm)
+  }
+  cd_ratio_plot <- cd_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 2) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.position = "none",
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  # Then do PC loadings
+  pc_ratio_df <- data.frame()
+  for(i in group_name[7:10]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique" ~ "HISAT2",
+        i == "kallisto_unique" ~ "Kallisto",
+        i == "star_unique" ~ "STAR",
+        i == "salmon_unique" ~ "Salmon"
+      ),
+      tx_group = factor(tx_group, levels = c("Concordant Transcripts",
+                                             "Discordant Transcripts",
+                                             "HISAT2",
+                                             "Kallisto",
+                                             "STAR",
+                                             "Salmon")))
+    pc_ratio_df <- rbind(pc_ratio_df, ratio_mm)
+  }
+  
+  pc_ratio_plot <- pc_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    #ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  fig_leg <- cowplot::get_legend(pc_ratio_plot)
+  
+  ylab <- textGrob("Log2 Ratio (Unique mappings/Multiple mappings)",
+                 gp = gpar(fontface = "bold",
+                           col = "black",
+                           fontsize = 20),
+                 rot = 90)
+
+  plot_joined <- cowplot::plot_grid(
+    cowplot::plot_grid(cd_ratio_plot,
+                       pc_ratio_plot + theme(legend.position = "none"),
+                       ncol = 1,
+                       labels = c("A)", "B)")),
+    fig_leg,
+    nrow = 1,
+    rel_widths = c(1, 0.15))
+  
+  fig_5 <- grid.arrange(arrangeGrob(plot_joined, left = ylab))
+  
+  ggsave(plot = fig_5,
+         filename = paste0(j, "_ratios_multi_fig5.png"),
+         path = here(paste0("figures/chapter_figures/figure5_ratios")),
+         height = 340,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+
+```
+
+### Repeat for inclusion/exclusion unique transcripts
+Mostly for sanity check
+```{r figure5_multi}
+for(j in samp_nms) {
+  # First do concordant and discordant
+  cd_ratio_df <- data.frame()
+  for(i in group_name[1:2]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique_incl" ~ "HISAT2",
+        i == "kallisto_unique_incl" ~ "Kallisto",
+        i == "star_unique_incl" ~ "STAR",
+        i == "salmon_unique_incl" ~ "Salmon"
+      ),
+      tx_group = factor(tx_group,
+                        levels = c("Concordant Transcripts",
+                                   "Discordant Transcripts",
+                                   "HISAT2",
+                                   "Kallisto",
+                                   "STAR",
+                                   "Salmon"))) %>%
+      dplyr::filter(!counts == 0)
+    cd_ratio_df <- rbind(cd_ratio_df, ratio_mm)
+  }
+  cd_ratio_plot <- cd_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 2) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.position = "none",
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  # Then do PC loadings
+  pc_ratio_df <- data.frame()
+  for(i in group_name[11:14]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "hisat2_unique_incl" ~ "HISAT2",
+        i == "kallisto_unique_incl" ~ "Kallisto",
+        i == "star_unique_incl" ~ "STAR",
+        i == "salmon_unique_incl" ~ "Salmon"
+      ),
+      tx_group = factor(tx_group, levels = c("Concordant Transcripts",
+                                             "Discordant Transcripts",
+                                             "HISAT2",
+                                             "Kallisto",
+                                             "STAR",
+                                             "Salmon")))
+    pc_ratio_df <- rbind(pc_ratio_df, ratio_mm)
+  }
+  
+  pc_ratio_plot <- pc_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    #ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  fig_leg <- cowplot::get_legend(pc_ratio_plot)
+  
+  ylab <- textGrob("Log2 Ratio (Unique mappings/Multiple mappings)",
+                 gp = gpar(fontface = "bold",
+                           col = "black",
+                           fontsize = 20),
+                 rot = 90)
+
+  plot_joined <- cowplot::plot_grid(
+    cowplot::plot_grid(cd_ratio_plot,
+                       pc_ratio_plot + theme(legend.position = "none"),
+                       ncol = 1,
+                       labels = c("A)", "B)")),
+    fig_leg,
+    nrow = 1,
+    rel_widths = c(1, 0.15))
+  
+  fig_5 <- grid.arrange(arrangeGrob(plot_joined, left = ylab))
+  
+  ggsave(plot = fig_5,
+         filename = paste0(j, "_ratios_multi_unique_incl_fig5.png"),
+         path = here(paste0("figures/chapter_figures/figure5_ratios")),
+         height = 340,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+
+```
+
+# Repeat for DTE exclusives
+
+```{r figure5_multi}
+for(j in samp_nms) {
+  # First do concordant and discordant
+  cd_ratio_df <- data.frame()
+  for(i in c(group_name[1:2], group_name[19])) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "all_dte" ~ "All Methods DTE",
+        i == "hisat2_dte" ~ "HISAT2 DTE",
+        i == "kallisto_dte" ~ "Kallisto DTE",
+        i == "star_dte" ~ "STAR DTE",
+        i == "salmon_dte" ~ "Salmon DTE"
+      ),
+      tx_group = factor(tx_group,
+                        levels = c("Concordant Transcripts",
+                                   "Discordant Transcripts",
+                                   "All Methods DTE",
+                                   "HISAT2 DTE",
+                                   "Kallisto DTE",
+                                   "STAR DTE",
+                                   "Salmon DTE"))) %>%
+      dplyr::filter(!counts == 0)
+    cd_ratio_df <- rbind(cd_ratio_df, ratio_mm)
+  }
+  cd_ratio_plot <- cd_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 3) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.position = "none",
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  # Then do PC loadings
+  pc_ratio_df <- data.frame()
+  for(i in group_name[15:18]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "all_dte" ~ "All Methods DTE",
+        i == "hisat2_dte" ~ "HISAT2 DTE",
+        i == "kallisto_dte" ~ "Kallisto DTE",
+        i == "star_dte" ~ "STAR DTE",
+        i == "salmon_dte" ~ "Salmon DTE"
+      ),
+      tx_group = factor(tx_group, levels = c("Concordant Transcripts",
+                                             "Discordant Transcripts",
+                                             "All Methods DTE",
+                                             "HISAT2 DTE",
+                                             "Kallisto DTE",
+                                             "STAR DTE",
+                                             "Salmon DTE")))
+    pc_ratio_df <- rbind(pc_ratio_df, ratio_mm)
+  }
+  
+  pc_ratio_plot <- pc_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    #ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  fig_leg <- cowplot::get_legend(pc_ratio_plot)
+  
+  ylab <- textGrob("Log2 Ratio (Unique mappings/Multiple mappings)",
+                 gp = gpar(fontface = "bold",
+                           col = "black",
+                           fontsize = 20),
+                 rot = 90)
+
+  plot_joined <- cowplot::plot_grid(
+    cowplot::plot_grid(cd_ratio_plot,
+                       pc_ratio_plot + theme(legend.position = "none"),
+                       ncol = 1,
+                       labels = c("A)", "B)")),
+    fig_leg,
+    nrow = 1,
+    rel_widths = c(1, 0.15))
+  
+  fig_5 <- grid.arrange(arrangeGrob(plot_joined, left = ylab))
+  
+  ggsave(plot = fig_5,
+         filename = paste0(j, "_ratios_multi_dte_fig5.png"),
+         path = here(paste0("figures/chapter_figures/figure5_ratios")),
+         height = 340,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+
+```
+
+# Repeat for DTU exclusives
+
+```{r figure5_multi}
+for(j in samp_nms) {
+  # First do concordant and discordant
+  cd_ratio_df <- data.frame()
+  for(i in c(group_name[1:2], group_name[24])) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "all_dtu" ~ "All Methods DTU",
+        i == "hisat2_dtu" ~ "HISAT2 DTU",
+        i == "kallisto_dtu" ~ "Kallisto DTU",
+        i == "star_dtu" ~ "STAR DTU",
+        i == "salmon_dtu" ~ "Salmon DTU"
+      ),
+      tx_group = factor(tx_group,
+                        levels = c("Concordant Transcripts",
+                                   "Discordant Transcripts",
+                                   "All Methods DTU",
+                                   "HISAT2 DTU",
+                                   "Kallisto DTU",
+                                   "STAR DTU",
+                                   "Salmon DTU"))) %>%
+      dplyr::filter(!counts == 0)
+    cd_ratio_df <- rbind(cd_ratio_df, ratio_mm)
+  }
+  cd_ratio_plot <- cd_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 3) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.position = "none",
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  # Then do PC loadings
+  pc_ratio_df <- data.frame()
+  for(i in group_name[20:23]) {
+    message("Starting group: ", i," sample: ", j, " plot")
+    
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(tx_group = case_when(
+        i == "highcor" ~ "Concordant Transcripts",
+        i == "lowcor" ~ "Discordant Transcripts",
+        i == "all_dtu" ~ "All Methods DTU",
+        i == "hisat2_dtu" ~ "HISAT2 DTU",
+        i == "kallisto_dtu" ~ "Kallisto DTU",
+        i == "star_dtu" ~ "STAR DTU",
+        i == "salmon_dtu" ~ "Salmon DTU"
+      ),
+      tx_group = factor(tx_group, levels = c("Concordant Transcripts",
+                                             "Discordant Transcripts",
+                                             "All Methods DTU",
+                                             "HISAT2 DTU",
+                                             "Kallisto DTU",
+                                             "STAR DTU",
+                                             "Salmon DTU")))
+    pc_ratio_df <- rbind(pc_ratio_df, ratio_mm)
+  }
+  
+  pc_ratio_plot <- pc_ratio_df %>%
+    ggplot(aes(x = group, y = counts, colour = category)) +
+    geom_quasirandom() +
+    geom_boxplot(fill = "yellow", colour = "black", width = 0.2,
+                 outlier.shape = NA) +
+    scale_y_continuous(limits = c(-20, 20)) +
+    scale_colour_manual(values = c("darkblue", "darkorange")) +
+    #ggtitle(paste0("Sample: ", j)) +
+    labs(colour = "Category") +
+    guides(colour = guide_legend(byrow = TRUE)) +
+    facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+    theme_bw() +
+    theme(plot.title = element_text(colour = "black", size = 18),
+          axis.title = element_blank(),
+          axis.text = element_text(colour = "black", size = 16),
+          strip.background = element_rect(fill = "lightblue"),
+          strip.text = element_text(colour = "black", size = 18),
+          legend.text = element_text(colour = "black", size = 16),
+          legend.title = element_text(colour = "black", size = 18),
+          legend.spacing.y = unit(0.5, "cm"))
+  
+  fig_leg <- cowplot::get_legend(pc_ratio_plot)
+  
+  ylab <- textGrob("Log2 Ratio (Unique mappings/Multiple mappings)",
+                 gp = gpar(fontface = "bold",
+                           col = "black",
+                           fontsize = 20),
+                 rot = 90)
+
+  plot_joined <- cowplot::plot_grid(
+    cowplot::plot_grid(cd_ratio_plot,
+                       pc_ratio_plot + theme(legend.position = "none"),
+                       ncol = 1,
+                       labels = c("A)", "B)")),
+    fig_leg,
+    nrow = 1,
+    rel_widths = c(1, 0.15))
+  
+  fig_5 <- grid.arrange(arrangeGrob(plot_joined, left = ylab))
+  
+  ggsave(plot = fig_5,
+         filename = paste0(j, "_ratios_multi_dtu_fig5.png"),
+         path = here(paste0("figures/chapter_figures/figure5_ratios")),
+         height = 340,
+         width = 420,
+         dpi = 400,
+         units = "mm", create.dir = TRUE)
+}
+
+```
+
+# Figure 5 Ratios
+```{r}
+ratio_df_fig <- data.frame()
+cor_groups <- c("highcor", "lowcor")
+for(i in cor_groups) {
+  for(j in samp_nms) {
+    ratio_mm <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate(group = factor(group,
+                                   levels = c("HISAT2", "Salmon", "STAR"))) %>%
+      dplyr::select(group, UniqueCount, multimap) %>%
+      dplyr::mutate(ratio = log2((UniqueCount+1)/(multimap+1)),
+                    category = case_when(
+                      ratio > 0 ~ "More Unique\nMappings",
+                      .default = "More Multiple\nMappings"
+                    ),
+                    category = factor(category,
+                                      levels = c("More Unique\nMappings",
+                                                 "More Multiple\nMappings")
+                    )) %>%
+      pivot_longer(cols = "ratio",
+                   names_to = "type",
+                   values_to = "counts") %>%
+      dplyr::mutate(sample = j,
+                    tx_group = i)
+    
+    ratio_df_fig <- rbind(ratio_df_fig, ratio_mm)
+  }
+}
+
+figure5_mm <- ratio_df_fig %>%
+  dplyr::mutate(tx_group = case_when(
+    tx_group == "highcor" ~ "Concordant Transcripts",
+    tx_group == "lowcor" ~ "Discordant Transcripts")) %>%
+  ggplot(aes(x = group, y = counts, colour = category)) +
+  geom_quasirandom(size = 1) +
+  scale_y_continuous(limits = c(-20, 20)) +
+  scale_colour_manual(values = c("darkblue", "darkorange")) +
+  #ggtitle(paste0("Sample: ", j)) +
+  labs(colour = "Category") +
+  guides(colour = guide_legend(byrow = TRUE)) +
+  facet_wrap(~ tx_group, nrow = 1, ncol = 4) +
+  theme_bw() +
+  theme(plot.title = element_text(colour = "black", size = 18),
+        axis.title = element_blank(),
+        axis.text = element_text(colour = "black", size = 16),
+        strip.background = element_rect(fill = "lightblue"),
+        strip.text = element_text(colour = "black", size = 18),
+        legend.text = element_text(colour = "black", size = 16),
+        legend.title = element_text(colour = "black", size = 18),
+        legend.spacing.y = unit(0.5, "cm"))
+
+ggsave(plot = figure5_mm,
+       filename = "figure5_multimapping.png",
+       path = here("figures/chapter_figures"),
+       height = 225,
+       width = 300,
+       dpi = 400,
+       units = "mm", create.dir = TRUE)
+
+```
+
+### Fig 5 Ratio investigate
+```{r concordant}
+hisat2_con_ratios <- cd_ratio_df %>%
+  dplyr::filter(tx_group == "Concordant Transcripts", group == "HISAT2") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                  .default = times_higher))
+
+summary(hisat2_con_ratios$times_higher)
+
+salmon_con_ratios <- cd_ratio_df %>%
+  dplyr::filter(tx_group == "Concordant Transcripts", group == "Salmon") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(salmon_con_ratios$times_higher)
+
+star_con_ratios <- cd_ratio_df %>%
+  dplyr::filter(tx_group == "Concordant Transcripts", group == "STAR") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(star_con_ratios$times_higher)
+
+concordant_ratios <- rbind(hisat2_con_ratios,
+                           salmon_con_ratios,
+                           star_con_ratios)
+```
+
+```{r discordant}
+hisat2_dis_ratios <- cd_ratio_df %>%
+  dplyr::filter(tx_group == "Discordant Transcripts", group == "HISAT2") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(hisat2_dis_ratios$times_higher)
+
+salmon_dis_ratios <- cd_ratio_df %>%
+  dplyr::filter(tx_group == "Discordant Transcripts", group == "Salmon") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(salmon_dis_ratios$times_higher)
+
+star_dis_ratios <- cd_ratio_df %>%
+  dplyr::filter(tx_group == "Discordant Transcripts", group == "STAR") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(star_dis_ratios$times_higher)
+
+discordant_ratios <- rbind(hisat2_dis_ratios,
+                           salmon_dis_ratios,
+                           star_dis_ratios)
+```
+
+## Uniques ratios
+```{r}
+ratio_df_fig %>% dplyr::filter(group == "HISAT2") %>% dplyr::select(category) %>% table()
+```
+
+```{r pc1_neg}
+hisat2_pc1_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "HISAT2", group == "HISAT2") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(hisat2_pc1_neg_ratios$times_higher)
+
+salmon_pc1_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "HISAT2", group == "Salmon") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(salmon_pc1_neg_ratios$times_higher)
+
+star_pc1_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "HISAT2", group == "STAR") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(star_pc1_neg_ratios$times_higher)
+
+pc1_neg_ratios <- rbind(hisat2_pc1_neg_ratios, 
+                        salmon_pc1_neg_ratios,
+                        star_pc1_neg_ratios)
+```
+
+```{r pc2_pos}
+hisat2_pc2_pos_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "Kallisto", group == "HISAT2") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(hisat2_pc2_pos_ratios$times_higher)
+
+salmon_pc2_pos_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "Kallisto", group == "Salmon") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(salmon_pc2_pos_ratios$times_higher)
+
+star_pc2_pos_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "Kallisto", group == "STAR") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(star_pc2_pos_ratios$times_higher)
+
+pc2_pos_ratios <- rbind(hisat2_pc2_pos_ratios,
+                        salmon_pc2_pos_ratios,
+                        star_pc2_pos_ratios)
+```
+
+```{r pc2_neg}
+hisat2_pc2_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "STAR", group == "HISAT2") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(hisat2_pc2_neg_ratios$times_higher)
+
+salmon_pc2_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "STAR", group == "Salmon") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(salmon_pc2_neg_ratios$times_higher)
+
+star_pc2_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "STAR", group == "STAR") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(star_pc2_neg_ratios$times_higher)
+
+pc2_neg_ratios <- rbind(hisat2_pc2_neg_ratios,
+                        salmon_pc2_neg_ratios,
+                        star_pc2_neg_ratios)
+```
+
+```{r pc5_neg}
+hisat2_pc5_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "Salmon", group == "HISAT2") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(hisat2_pc5_neg_ratios$times_higher)
+
+salmon_pc5_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "Salmon", group == "Salmon") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(salmon_pc5_neg_ratios$times_higher)
+
+star_pc5_neg_ratios <- pc_ratio_df %>%
+  dplyr::filter(tx_group == "Salmon", group == "STAR") %>%
+  mutate(times_higher = 2^counts,
+         times_higher = case_when(times_higher < 1 ~ ((1/times_higher)*-1),
+                                .default = times_higher))
+
+summary(star_pc5_neg_ratios$times_higher)
+
+pc5_neg_ratios <- rbind(hisat2_pc5_neg_ratios,
+                        salmon_pc5_neg_ratios,
+                        star_pc5_neg_ratios)
+```
+
+### Categories
+Start comparing multimapping rates between methods
+```{r status}
+for(k in group_name) {
+  message("Starting group ", k)
+  for(j in samp_nms) {
+    message("Starting Sample: ", j)
+    mm_df <- data.frame()
+    
+    for(i in method_name) {
+      message("Starting Method ", i)
+      statuses_df <- multimap_group_list[[k]][[i]][[j]] %>%
+        dplyr::filter(!is.na(status)) %>%
+        dplyr::mutate(status = str_to_title(
+          str_replace_all(string = status,
+                          pattern = "_", 
+                          replacement = " "),),
+          status = str_replace(status, "Multi", "Ambig"),
+          status = factor(status, levels = c("All Unique Reads",
+                                             "More Unique",
+                                             "Equal",
+                                             "More Ambig",
+                                             "All Ambig Reads"))) %>%
+        dplyr::mutate(method = i)
+      
+      mm_df <- rbind(mm_df, statuses_df)
+    }
+    
+    statuses_plot <- mm_df %>%
+      ggplot(aes(x = status, fill = status)) +
+      geom_bar(colour = "black") +
+      labs(y = "Frequency",
+           x = "",
+           fill = "Degree of\nMulti-Mapping") +
+      ggtitle(paste0("Sample: ", j)) +
+      scale_fill_viridis_d() +
+      facet_grid(~ method) +
+      theme_bw() +
+      theme(
+        axis.title = element_text(colour = "black", size = 14),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.title = element_text(colour = "black", size = 14, face = "bold"),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.background = element_rect(fill = "lightblue"),
+        strip.text = element_text(colour = "black", size = 14, face = "bold"),
+        legend.title = element_text(colour = "black", 
+                                    size = 12, face = "bold")
+        )
+    
+    tryCatch({
+      ggsave(plot = statuses_plot,
+             filename = paste0(j, "_mapping_categories.png"),
+             path = here(paste0("figures/multi_map/", k, "/categories/")),
+             height = 150,
+             width = 175,
+             dpi = 400,
+             units = "mm", create.dir = TRUE)
+    }, error = function(e) {
+      cat("No data found for iteration", k, ":", j)
+    })
+  }
+}
+```
+
+### Percentage ambig
+```{r percentage}
+for(k in group_name) {
+  for(i in method_name) {
+    for(j in samp_nms) {
+      message("Starting Group ", k, ", Method ", i, ", Sample: ", j, " plot")
+      
+      percent_numreads <- multimap_group_list[[k]][[i]][[j]] %>%
+        ggplot(aes(x = NumReads, y = 100*percent_est_from_multimap)) +
+        geom_point(size = 3) +
+        ggtitle(paste0("Method: ", i, ", Sample: ", j)) +
+        labs(x = "Number of Reads",
+             y = "Reads that Multi-Mapped (%)") +
+        theme_bw() +
+        theme(
+          axis.title = element_text(colour = "black", size = 14),
+          axis.text = element_text(colour = "black", size = 12),
+          plot.title = element_text(colour = "black", size = 14,
+                                    face = "bold")
+          )
+      
+      tryCatch({
+        ggsave(plot = percent_numreads,
+               filename = paste0(j, "_percent_numreads.png"),
+               path = paste0(here("figures/multi_map/",
+                                  k,
+                                  "/percent_numreads/"),
+                             tolower(i), "/"),
+               height = 150,
+               width = 175,
+               dpi = 400,
+               units = "mm", create.dir = TRUE)
+      }, error = function(e) {
+        cat("No data found for iteration", k, ":", j)
+      })
+    }
+  }
+}
+
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting Group ", i, ", Sample: ", j, " plot")
+    
+    percent_numreads <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      ggplot(aes(x = NumReads, y = 100*percent_est_from_multimap)) +
+      geom_point(size = 2) +
+      ggtitle(paste0("Sample: ", j)) +
+      labs(x = "Number of Reads",
+           y = "Reads that Multi-Mapped (%)") +
+      facet_grid(~ group) +
+      theme_bw() +
+      theme(
+        axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        plot.title = element_text(colour = "black", size = 14,
+                                  face = "bold"),
+        strip.background = element_rect(fill = "lightblue")
+      )
+    
+    tryCatch({
+    ggsave(plot = percent_numreads,
+           filename = paste0(j, "_percent_numreads.png"),
+           path = paste0(here("figures/multi_map/",
+                              i,
+                              "/percent_numreads/")),
+           height = 100,
+           width = 250,
+           dpi = 400,
+           units = "mm", create.dir = TRUE)
+    }, error = function(e) {
+      cat("No data found for iteration", i, ":", j)
+    })
+  }
+}
+
+
+```
+
+### Variance Percent
+```{r var_percent}
+var_df <- read_csv(here("data/counts/variance_df.csv"))
+
+for(k in group_name) {
+  for(i in method_name) {
+    for(j in samp_nms) {
+      message("Starting Group ", k, ", Method ", i, ", Sample: ", j, " plot")
+      
+      var_percent <- multimap_group_list[[k]][[i]][[j]] %>%
+        dplyr::mutate("transcript_id" = str_remove(Name, "\\..*")) %>%
+        inner_join(var_df,
+                   by = "transcript_id") %>%
+        dplyr::arrange(desc(rowvar)) %>%
+        ggplot(aes(x = rowvar, y = 100*percent_est_from_multimap)) +
+        geom_point() +
+        labs(x = "Transcript Count Variance",
+             y = "Reads that Multi-Mapped (%)") +
+        theme_bw()
+      
+      tryCatch({
+        ggsave(plot = var_percent,
+               filename = paste0(j, "_var_percent.png"),
+               path = paste0(here("figures/multi_map/", k, "/var_percent/"),
+                             tolower(i), "/"),
+               height = 150,
+               width = 175,
+               dpi = 400,
+               units = "mm", create.dir = TRUE)
+      }, error = function(e) {
+        cat("No data found for iteration", k, ":", i, "-", j)
+      })
+    }
+  }
+}
+
+for(i in group_name) {
+  for(j in samp_nms) {
+    message("Starting Group ", i, ", Sample: ", j, " plot")
+    
+    var_percent <- multimap_group_list[[i]][["STAR"]][[j]] %>%
+      dplyr::mutate(group = "STAR") %>%
+      rbind(multimap_group_list[[i]][["Salmon"]][[j]] %>%
+              dplyr::mutate(group = "Salmon")) %>%
+      rbind(multimap_group_list[[i]][["HISAT2"]][[j]] %>%
+              dplyr::mutate(group = "HISAT2")) %>%
+      dplyr::mutate("transcript_id" = str_remove(Name, "\\..*")) %>%
+      inner_join(var_df,
+                 by = "transcript_id") %>%
+      dplyr::arrange(desc(rowvar)) %>%
+      ggplot(aes(x = rowvar, y = 100*percent_est_from_multimap)) +
+      geom_point(size = 2) +
+      facet_grid(~ group) +
+      ggtitle(paste0("Sample: ", j)) +
+      labs(x = "Transcript Count Variance",
+           y = "Reads that Multi-Mapped (%)") +
+      theme_bw() +
+      theme(
+        axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12),
+        plot.title = element_text(colour = "black", size = 14,
+                                  face = "bold"),
+        strip.background = element_rect(fill = "lightblue")
+      )
+    
+    tryCatch({
+      ggsave(plot = var_percent,
+             filename = paste0(j, "_var_percent.png"),
+             path = paste0(here("figures/multi_map/", i, "/var_percent/")),
+             height = 100,
+             width = 205,
+             dpi = 400,
+             units = "mm", create.dir = TRUE)
+    }, error = function(e) {
+      cat("No data found for iteration", i, ":", j)
+    })
+  }
+}
+```
+
+## Number of transcripts
+```{r}
+star_multitx <- star_multi_mapping[[1]] %>%
+  dplyr::mutate(has_multi = case_when(AmbigCount > 0 ~ TRUE,
+                                      AmbigCount == 0 ~ FALSE))
+star_multitx$has_multi %>% table()
+
+salmon_multitx <- sa_multi_mapping[[1]] %>%
+  dplyr::mutate(has_multi = case_when(AmbigCount > 0 ~ TRUE,
+                                      AmbigCount == 0 ~ FALSE))
+salmon_multitx$has_multi %>% table()
+
+hisat2_multitx <- hisat2_multi_mapping[[1]] %>%
+  dplyr::mutate(has_multi = case_when(AmbigCount > 0 ~ TRUE, 
+                                      AmbigCount == 0 ~ FALSE))
+hisat2_multitx$has_multi %>% table()
+
+```
+
+# Relationship between DTE Significance and multimapping
+## HISAT2
+```{r}
+hisat2_multitx <- hisat2_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+hisat2_dte_mm <- hisat2_lmfit %>% 
+  left_join(hisat2_multitx,
+            by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point() +
+  labs(x = "Multimapping Counts Frequency (log10)",
+       y = "Transcript DE Significance (FDR -log10)",
+       colour = "Transcript length (log10)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+hisat2_dte_mm
+
+ggsave(plot = hisat2_dte_mm,
+       filename = "hisat2_de_mm_cor.png",
+       path = here("figures/dte_mm/"),
+       device = "png",
+       height = 17,
+       width = 22,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+hisat2_multitx <- hisat2_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+hisat2_lmfit %>% left_join(hisat2_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+
+hisat2_lmfit %>% 
+  dplyr::filter(FDR < 0.05) %>%
+  left_join(hisat2_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point()
+
+hisat2_lmfit %>% 
+  dplyr::filter(FDR < 0.05) %>%
+  left_join(hisat2_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+
+hisat2_lmfit %>% 
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1) %>%
+  left_join(hisat2_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point()
+
+hisat2_lmfit %>% 
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1) %>%
+  left_join(hisat2_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+```
+
+## Salmon
+```{r}
+salmon_multitx <- salmon_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+
+salmon_dte_mm <- salmon_lmfit %>%
+  left_join(salmon_multitx,
+            by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point() +
+  labs(x = "Multimapping Counts Frequency (log10)",
+       y = "Transcript DE Significance (FDR -log10)",
+       colour = "Transcript length (log10)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+salmon_dte_mm
+
+ggsave(plot = salmon_dte_mm,
+       filename = "salmon_de_mm_cor.png",
+       path = here("figures/dte_mm/"),
+       device = "png",
+       height = 17,
+       width = 22,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+salmon_multitx <- salmon_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+salmon_lmfit %>% left_join(salmon_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+
+salmon_lmfit %>% 
+  dplyr::filter(FDR < 0.05) %>%
+  left_join(salmon_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point()
+
+salmon_lmfit %>% 
+  dplyr::filter(FDR < 0.05) %>%
+  left_join(salmon_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+
+salmon_lmfit %>% 
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1) %>%
+  left_join(salmon_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point()
+
+salmon_lmfit %>% 
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1) %>%
+  left_join(salmon_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+```
+
+## STAR
+```{r}
+star_multitx <- star_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+
+star_dte_mm <- star_lmfit %>% 
+  left_join(star_multitx,
+            by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point() +
+  labs(x = "Multimapping Counts Frequency (log10)",
+       y = "Transcript DE Significance (FDR -log10)",
+       colour = "Transcript length (log10)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+star_dte_mm
+
+ggsave(plot = star_dte_mm,
+       filename = "star_de_mm_cor.png",
+       path = here("figures/dte_mm/"),
+       device = "png",
+       height = 17,
+       width = 22,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+star_multitx <- star_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+star_lmfit %>% left_join(star_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+
+star_lmfit %>% 
+  dplyr::filter(FDR < 0.05) %>%
+  left_join(star_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point()
+
+star_lmfit %>% 
+  dplyr::filter(FDR < 0.05) %>%
+  left_join(star_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+
+star_lmfit %>% 
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1) %>%
+  left_join(star_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), y = -log10(FDR), colour = log10(transcript_length))) +
+  geom_point()
+
+star_lmfit %>% 
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1) %>%
+  left_join(star_multitx,
+                           by = "transcript_id") %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(FDR), y = log10(transcript_length))) +
+  geom_point()
+```
+
+
+# Relationship between DTU Significance and multimapping
+## HISAT2
+```{r}
+hisat2_multitx <- hisat2_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+
+hisat2_dtu_mm <- hisat2_dtu %>%
+  left_join(hisat2_multitx,
+            by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), y = -log10(txpFDR), colour = log10(Length))) +
+  geom_point() +
+  labs(x = "Multimapping Counts Frequency (log10)",
+       y = "Transcript DTU Significance (FDR -log10)",
+       colour = "Transcript length (log10)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+hisat2_dtu_mm
+
+ggsave(plot = hisat2_dtu_mm,
+       filename = "hisat2_dtu_mm_cor.png",
+       path = here("figures/dtu_mm/"),
+       device = "png",
+       height = 17,
+       width = 22,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+hisat2_multitx <- hisat2_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+hisat2_dtu %>% left_join(hisat2_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(txpFDR), y = log10(Length))) +
+  geom_point()
+
+hisat2_dtu %>% 
+  dplyr::filter(txpFDR < 0.05) %>%
+  left_join(hisat2_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), y = -log10(txpFDR), colour = log10(Length))) +
+  geom_point()
+
+hisat2_dtu %>% 
+  dplyr::filter(txpFDR < 0.05) %>%
+  left_join(hisat2_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(txpFDR), y = log10(Length))) +
+  geom_point()
+```
+
+## Salmon
+```{r}
+salmon_multitx <- salmon_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+
+salmon_dtu_mm <- salmon_dtu %>%
+  left_join(salmon_multitx,
+            by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), y = -log10(txpFDR), colour = log10(Length))) +
+  geom_point() +
+  labs(x = "Multimapping Counts Frequency (log10)",
+       y = "Transcript DTU Significance (FDR -log10)",
+       colour = "Transcript length (log10)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+salmon_dtu_mm
+
+ggsave(plot = salmon_dtu_mm,
+       filename = "salmon_dtu_mm_cor.png",
+       path = here("figures/dtu_mm/"),
+       device = "png",
+       height = 17,
+       width = 22,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+salmon_multitx <- salmon_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+salmon_dtu %>% left_join(salmon_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(txpFDR), y = log10(Length))) +
+  geom_point()
+
+salmon_dtu %>% 
+  dplyr::filter(txpFDR < 0.05) %>%
+  left_join(salmon_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), y = -log10(txpFDR), colour = log10(Length))) +
+  geom_point()
+
+salmon_dtu %>% 
+  dplyr::filter(txpFDR < 0.05) %>%
+  left_join(salmon_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(txpFDR), y = log10(Length))) +
+  geom_point()
+```
+
+## STAR
+```{r}
+star_multitx <- star_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+
+star_dtu_mm <- star_dtu %>% 
+  left_join(star_multitx,
+            by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), y = -log10(txpFDR), colour = log10(Length))) +
+  geom_point() +
+  labs(x = "Multimapping Counts Frequency (log10)",
+       y = "Transcript DTU Significance (FDR -log10)",
+       colour = "Transcript length (log10)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+star_dtu_mm
+
+ggsave(plot = star_dtu_mm,
+       filename = "star_dtu_mm_cor.png",
+       path = here("figures/dtu_mm/"),
+       device = "png",
+       height = 17,
+       width = 22,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+star_multitx <- star_multitx %>%
+  dplyr::mutate(transcript_id = str_remove(Name, "\\..*"))
+star_dtu %>% left_join(star_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(txpFDR), y = log10(Length))) +
+  geom_point()
+
+star_dtu %>% 
+  dplyr::filter(txpFDR < 0.05) %>%
+  left_join(star_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), y = -log10(txpFDR), colour = log10(Length))) +
+  geom_point()
+
+star_dtu %>% 
+  dplyr::filter(txpFDR < 0.05) %>%
+  left_join(star_multitx,
+                           by = c("Transcript" = "transcript_id")) %>%
+  ggplot(aes(x = log10(multimap), colour = -log10(txpFDR), y = log10(Length))) +
+  geom_point()
+```
+
+# DE and DTU Comparisons
+```{r}
+hisat2_condis <- rbind(
+  hisat2_lmfit %>%
+    dplyr::filter(transcript_id %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  hisat2_lmfit %>% 
+    dplyr::filter(transcript_id %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+) 
+
+hisat2_condis %>%
+  ggplot(aes(y = -log10(FDR), x = cohort)) +
+  geom_boxplot()
+
+hisat2_condis %>%
+  ggplot(aes(y = abs(logFC), x = cohort)) +
+  geom_boxplot()
+
+hisat2_condis %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1)
+
+kallisto_condis <- rbind(
+  kallisto_lmfit %>%
+    dplyr::filter(transcript_id %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  kallisto_lmfit %>% 
+    dplyr::filter(transcript_id %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+)
+
+kallisto_condis %>%
+  ggplot(aes(y = -log10(FDR), x = cohort)) +
+  geom_boxplot()
+
+kallisto_condis %>%
+  ggplot(aes(y = abs(logFC), x = cohort)) +
+  geom_boxplot()
+
+kallisto_condis %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1)
+
+salmon_condis <- rbind(
+  salmon_lmfit %>%
+    dplyr::filter(transcript_id %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  salmon_lmfit %>% 
+    dplyr::filter(transcript_id %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+)
+
+salmon_condis %>%
+  ggplot(aes(y = -log10(FDR), x = cohort)) +
+  geom_boxplot()
+
+salmon_condis %>%
+  ggplot(aes(y = abs(logFC), x = cohort)) +
+  geom_boxplot()
+
+salmon_condis %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1)
+
+star_condis <- rbind(
+  star_lmfit %>%
+    dplyr::filter(transcript_id %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  star_lmfit %>% 
+    dplyr::filter(transcript_id %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+)
+
+star_condis %>%
+  ggplot(aes(y = -log10(FDR), x = cohort)) +
+  geom_boxplot()
+
+star_condis %>%
+  ggplot(aes(y = abs(logFC), x = cohort)) +
+  geom_boxplot()
+
+star_condis %>%
+  dplyr::filter(FDR < 0.05 & abs(logFC) > 1)
+
+condis_length <- hisat2_condis %>%
+  ggplot(aes(x = cohort, y = transcript_length)) +
+  geom_boxplot(fill = "lightblue", colour = "black") +
+  labs(y = "Transcript Length (bp)",
+       x = " ") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12))
+
+ggsave(plot = condis_length,
+       filename = "condis_length.png",
+       path = here("figures/chapter_figures/"),
+       device = "png",
+       height = 17,
+       width = 20,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+hisat2_condis %>%
+  dplyr::filter(cohort == "concordant") %>%
+  dplyr::select(transcript_length) %>%
+  summary()
+
+hisat2_condis %>%
+  dplyr::filter(cohort == "discordant") %>%
+  dplyr::select(transcript_length) %>%
+  summary()
+
+hisat2_condis %>%
+  ggplot(aes(x = cohort, y = gene_length)) +
+  geom_boxplot(fill = "lightblue")
+
+condis_expr <- hisat2_condis %>%
+  ggplot(aes(x = cohort, y = AveExpr)) +
+  geom_boxplot(fill = "lightblue", colour = "black") +
+  labs(y = "Mean Transcript Expression (log2 CPM)",
+       x = "Similarity Cohort") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12))
+
+ggsave(plot = condis_expr,
+       filename = "condis_expr.png",
+       path = here("figures/chapter_figures/"),
+       device = "png",
+       height = 17,
+       width = 20,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+
+condis_cowplot <- cowplot::plot_grid(condis_length,
+                                     condis_expr,
+                                     ncol = 1,
+                                     labels = c("a", "b"))
+
+ggsave(plot = condis_cowplot,
+       filename = "condis_cowplot.png",
+       path = here("figures/chapter_figures/"),
+       device = "png",
+       height = 34,
+       width = 20,
+       dpi = 400,
+       units = "cm",
+       create.dir = TRUE)
+  
+  hisat2_condis %>%
+  dplyr::filter(cohort == "concordant") %>%
+  dplyr::select(AveExpr) %>%
+  summary()
+
+hisat2_condis %>%
+  dplyr::filter(cohort == "discordant") %>%
+  dplyr::select(AveExpr) %>%
+  summary()
+
+hisat2_condis %>%
+  ggplot(aes(x = cohort, y = gc_content)) +
+  geom_boxplot()
+
+```
+
+
+```{r}
+hisat2_dtu_condis <- rbind(
+  hisat2_dtu %>%
+    dplyr::filter(Transcript %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  hisat2_dtu %>% 
+    dplyr::filter(Transcript %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+) 
+
+hisat2_dtu_condis %>%
+  ggplot(aes(y = -log10(txpFDR), x = cohort)) +
+  geom_boxplot()
+
+hisat2_dtu_condis %>%
+  dplyr::filter(txpFDR < 0.05)
+
+
+kallisto_dtu_condis <- rbind(
+  kallisto_dtu %>%
+    dplyr::filter(Transcript %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  kallisto_dtu %>% 
+    dplyr::filter(Transcript %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+) 
+
+kallisto_dtu_condis %>%
+  ggplot(aes(y = -log10(txpFDR), x = cohort)) +
+  geom_boxplot()
+
+kallisto_dtu_condis %>%
+  dplyr::filter(txpFDR < 0.05)
+
+
+salmon_dtu_condis <- rbind(
+  salmon_dtu %>%
+    dplyr::filter(Transcript %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  salmon_dtu %>% 
+    dplyr::filter(Transcript %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+) 
+
+salmon_dtu_condis %>%
+  ggplot(aes(y = -log10(txpFDR), x = cohort)) +
+  geom_boxplot()
+
+salmon_dtu_condis %>%
+  dplyr::filter(txpFDR < 0.05)
+
+
+star_dtu_condis <- rbind(
+  star_dtu %>%
+    dplyr::filter(Transcript %in% highcor$transcript_id) %>%
+    dplyr::mutate(cohort = "concordant"),
+  star_dtu %>% 
+    dplyr::filter(Transcript %in% lowcor$transcript_id) %>%
+    dplyr::mutate(cohort = "discordant")
+) 
+
+star_dtu_condis %>%
+  ggplot(aes(y = -log10(txpFDR), x = cohort)) +
+  geom_boxplot()
+
+star_dtu_condis %>%
+  dplyr::filter(txpFDR < 0.05)
+```
+
+## Concordant and Discordant - Biotypes and Isoforms
+```{r}
+hisat2_condis %>% dplyr::filter(cohort == "discordant") %>% dplyr::select(tx_biotype) %>% table()
+hisat2_condis %>% dplyr::filter(cohort == "discordant") %>% dplyr::select(gene_id) %>% table() %>% sort()
+
+hisat2_dis <- hisat2_condis %>% dplyr::filter(cohort == "discordant")
+
+gene_txp_anno %>% dplyr::filter(gene_id %in% hisat2_dis$gene_id)
+
+hisat2_condis %>% dplyr::filter(cohort == "concordant") %>% dplyr::select(tx_biotype) %>% table()
+hisat2_condis %>% dplyr::filter(cohort == "concordant") %>% dplyr::select(gene_id) %>% table() %>% sort()
+
+hisat2_con <- hisat2_condis %>% dplyr::filter(cohort == "concordant")
+
+con_iso <- gene_txp_anno %>%
+  dplyr::filter(gene_id %in% hisat2_con$gene_id) %>% 
+  dplyr::select(gene_id) %>%
+  group_by(gene_id) %>%
+  dplyr::summarise(isoforms = n()) %>%
+  dplyr::mutate(cohort = "concordant")
+
+con_iso %>%
+  left_join(dplyr::select(gene_txp_anno, gene_id, gene_biotype),
+            by = "gene_id") %>%
+  distinct() %>%
+  dplyr::select(gene_biotype) %>%
+  table()
+
+con_iso %>%
+  ggplot(aes(x = isoforms)) +
+  geom_histogram(colour = "white", fill = "#FF0000", binwidth = 1) +
+  theme_bw()
+
+dis_iso <- gene_txp_anno %>%
+  dplyr::filter(gene_id %in% hisat2_dis$gene_id) %>% 
+  dplyr::select(gene_id) %>%
+  group_by(gene_id) %>%
+  dplyr::summarise(isoforms = n()) %>%
+  dplyr::mutate(cohort = "discordant") 
+
+dis_iso %>%
+  left_join(dplyr::select(gene_txp_anno, gene_id, gene_biotype),
+            by = "gene_id") %>%
+  distinct() %>%
+  dplyr::select(gene_biotype) %>%
+  table()
+
+dis_iso %>%
+  ggplot(aes(x = isoforms)) +
+  geom_histogram(colour = "white", fill = "#FF0000", binwidth = 1) +
+  theme_bw()
+
+rbind(con_iso, dis_iso) %>%
+  ggplot(aes(x = cohort, y = isoforms)) +
+  geom_boxplot(colour = "black", fill = "lightblue") +
+  scale_y_log10() +
+  theme_bw()
+
+condis_iso <- rbind(con_iso, dis_iso) %>%
+  dplyr::mutate(cohort = str_to_title(cohort)) %>%
+  ggplot(aes(x = cohort, y = log2(isoforms-1))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(x = "Group", y = "Sister Isoforms (log2)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12))
+
+
+```
+
+
+# Compare sd (variance stabilisation has been done)
+After running voom, the variance is stabilised, so we won't accidentally only get highly expressed transcripts
+For DTE and DTU should make note of the uniques in each
+```{r}
+stdev_samples <- read_rds(here("data/stdev_by_sample.rds"))
+
+srr16_nm <- paste0(names(stdev_samples)[1]) 
+stdev_df <- stdev_samples[[1]] %>%
+  dplyr::select("transcript_id", "stdev")
+colnames(stdev_df)[2] <- srr16_nm
+
+for(i in names(stdev_samples)[-1]) {
+  stdev_samp_df <- stdev_samples[[i]] %>%
+    dplyr::select("transcript_id", "stdev")
+  
+  smp_nm <- paste0(i)
+  
+  colnames(stdev_samp_df)[2] <- smp_nm
+  
+  stdev_df <- left_join(stdev_df, stdev_samp_df,
+                        by = "transcript_id")
+}
+```
+
+## sd biotypes
+```{r}
+bt_sd <- stdev_df %>% 
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "sample_id", 
+               values_to = "stdev") %>% 
+  group_by(transcript_id) %>%
+  summarise(mean_sd = mean(stdev)) %>% 
+  inner_join(
+    dplyr::select(gene_txp_anno, "transcript_id", "transcript_biotype"),
+    by = "transcript_id") %>%
+  dplyr::filter(
+    transcript_biotype %in% c("protein_coding", "retained_intron",
+                              "nonsense_mediated_decay", "processed_transcript",
+                              "lncRNA")
+  ) %>%
+  dplyr::mutate("Transcript_Biotype" = case_when(
+    transcript_biotype == "nonsense_mediated_decay" ~ "NMD",
+    transcript_biotype == "processed_transcript" ~ "Processed Transcript",
+    transcript_biotype == "protein_coding" ~ "Protein Coding",
+    transcript_biotype == "retained_intron" ~ "Retained Intron",
+    .default = "lncRNA"
+  ))
+
+bt_sd %>% group_by(transcript_biotype) %>% summarise(stats = mean(mean_sd))
+bt_sd %>% group_by(transcript_biotype) %>% summarise(stats = median(mean_sd))
+bt_sd %>% group_by(transcript_biotype) %>% reframe(iqr = quantile(mean_sd)) %>%
+  dplyr::mutate("quartiles" = rep(c("min", "1st",
+                                    "median", "3rd", "max"), 5)) %>%
+  write_csv(here("data/biotypes_iqr.csv"))
+```
+
+
+```{r}
+stdev_df %>% 
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "sample_id", 
+               values_to = "stdev") %>% 
+  group_by(transcript_id) %>%
+  summarise(mean_sd = mean(stdev)) %>% 
+  inner_join(
+    dplyr::select(gene_txp_anno, "transcript_id", "transcript_biotype"),
+    by = "transcript_id") %>%
+  dplyr::filter(
+    transcript_biotype %in% c("protein_coding", "retained_intron",
+                              "nonsense_mediated_decay", "processed_transcript",
+                              "lncRNA")
+  ) %>%
+  dplyr::mutate("Transcript_Biotype" = case_when(
+    transcript_biotype == "nonsense_mediated_decay" ~ "NMD",
+    transcript_biotype == "processed_transcript" ~ "Processed Transcript",
+    transcript_biotype == "protein_coding" ~ "Protein Coding",
+    transcript_biotype == "retained_intron" ~ "Retained Intron",
+    .default = "lncRNA"
+  )) %>%
+  ggplot(aes(x = Transcript_Biotype, y = log2(mean_sd))) +
+  geom_boxplot(fill = "lightblue") + 
+  labs(x = "Transcript Biotype",
+       y = "Standard Deviation (log2)") +
+  theme_bw() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 14))
+```
+
+## sd isoforms
+```{r}
+sd_genes <- stdev_df %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  left_join(dplyr::select(gene_txp_anno, gene_id, transcript_id),
+            by = "transcript_id") %>%
+  distinct()
+
+sd_iso <- gene_txp_anno %>%
+  dplyr::filter(gene_id %in% sd_genes$gene_id) %>% 
+  dplyr::select(gene_id) %>%
+  group_by(gene_id) %>%
+  dplyr::summarise(isoforms = n())
+
+full_join(sd_genes, sd_iso, by = "gene_id") %>%
+  ggplot(aes(x = isoforms, y = log2(stdev))) +
+  geom_point() +
+  facet_wrap(~ group)
+
+full_join(sd_genes, sd_iso, by = "gene_id") %>%
+  group_by(transcript_id, isoforms) %>%
+  dplyr::summarise(mean_sd = mean(stdev)) %>%
+  ggplot(aes(x = isoforms, y = mean_sd)) +
+  geom_point() +
+  geom_smooth()
+```
+
+## sd mm ratios
+```{r}
+names(hisat2_multi_mapping)
+# hisat2_mm <- hisat2_multi_mapping[[1]] %>%
+#   dplyr::mutate("transcript_id" = str_remove(Name, "\\..*")) %>%
+#   dplyr::filter(transcript_id %in% rownames(hisat2_dtelist)) %>%
+#   dplyr::select("transcript_id", "percent_est_from_multimap")
+
+# colnames(hisat2_mm)[2] <- names(hisat2_multi_mapping)[1]
+
+hisat2_mm <- list()
+for(i in names(hisat2_multi_mapping)[1:8]) {
+  hisat2_samp_mm <- hisat2_multi_mapping[[i]] %>%
+    dplyr::mutate("transcript_id" = str_remove(Name, "\\..*")) %>%
+    dplyr::filter(transcript_id %in% rownames(hisat2_dtelist)) %>%
+    dplyr::select("transcript_id", "percent_est_from_multimap", "UniqueCount",
+                  "AmbigCount", "multimap", "TPM", "Length")
+  
+  hisat2_mm[[i]] <- inner_join(dplyr::select(stdev_samples[[i]],
+                                             "transcript_id",
+                                             "stdev"),
+                               hisat2_samp_mm,
+                               by = "transcript_id")
+}
+
+hisat2_mm[[1]] %>%
+  pivot_longer(cols = colnames(hisat2_mm[[1]])[3:dim(hisat2_mm[[1]])[2]],
+               names_to = "group",
+               values_to = "vals") %>%
+  ggplot(aes(x = stdev, y = vals)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
+  facet_wrap(~ group)
+
+hisat2_mm[[1]] %>%
+  dplyr::select("transcript_id",
+                "stdev",
+                "percent_est_from_multimap") %>%
+  ggplot(aes(y = log2(stdev), x = percent_est_from_multimap)) +
+  geom_point(colour = "grey70") +
+  geom_smooth(colour = "grey30", fill = "black", linewidth = 1.5) +
+  labs(x = "Counts from multi-mapping reads (%)",
+       y = "Standard Deviation (log2)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+
+salmon_mm <- list()
+for(i in names(sa_multi_mapping)[1:8]) {
+  salmon_samp_mm <- sa_multi_mapping[[i]] %>%
+    dplyr::mutate("transcript_id" = str_remove(Name, "\\..*")) %>%
+    dplyr::filter(transcript_id %in% rownames(salmon_dtelist)) %>%
+    dplyr::select("transcript_id", "percent_est_from_multimap", "UniqueCount",
+                  "AmbigCount", "multimap", "TPM", "Length")
+  
+  salmon_mm[[i]] <- inner_join(dplyr::select(stdev_samples[[i]],
+                                             "transcript_id",
+                                             "stdev"),
+                               salmon_samp_mm,
+                               by = "transcript_id")
+}
+
+salmon_mm[[1]] %>%
+  pivot_longer(cols = colnames(salmon_mm[[1]])[3:dim(salmon_mm[[1]])[2]],
+               names_to = "group",
+               values_to = "vals") %>%
+  ggplot(aes(x = stdev, y = vals)) +
+  geom_point() +
+  scale_y_log10() +
+  facet_wrap(~ group)
+
+star_mm <- list()
+for(i in names(star_multi_mapping)[1:8]) {
+  star_samp_mm <- star_multi_mapping[[i]] %>%
+    dplyr::mutate("transcript_id" = str_remove(Name, "\\..*")) %>%
+    dplyr::filter(transcript_id %in% rownames(star_dtelist)) %>%
+    dplyr::select("transcript_id", "percent_est_from_multimap", "UniqueCount",
+                  "AmbigCount", "multimap", "TPM", "Length")
+  
+  star_mm[[i]] <- inner_join(dplyr::select(stdev_samples[[i]],
+                                             "transcript_id",
+                                             "stdev"),
+                               star_samp_mm,
+                               by = "transcript_id")
+}
+
+star_mm[[1]] %>%
+  pivot_longer(cols = colnames(star_mm[[1]])[3:dim(star_mm[[1]])[2]],
+               names_to = "group",
+               values_to = "vals") %>%
+  ggplot(aes(x = stdev, y = vals)) +
+  geom_point() +
+  scale_y_log10() +
+  facet_wrap(~ group)
+```
+
+## DTE variance
+Will be limited to transcripts found in all samples
+```{r}
+hisat2_dte_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% hisat2_dte_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "HISAT2")
+
+kallisto_dte_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% kallisto_dte_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "Kallisto")
+
+salmon_dte_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% salmon_dte_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "Salmon")
+
+star_dte_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% star_dte_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "STAR")
+
+all_dte_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% all_methods_tx_dte$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "All")
+
+rbind(hisat2_dte_stdev,
+      kallisto_dte_stdev,
+      salmon_dte_stdev,
+      star_dte_stdev,
+      all_dte_stdev) %>%
+  ggplot(aes(x = group, y = log2(stdev), fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_y_continuous(limits = c(-6.7, 3)) +
+  scale_fill_viridis_d() +
+  facet_wrap(~ group,
+             scales = "free") +
+  labs(x = "Sample ID",
+       y = "Standard Deviation (log2)",
+       fill = "DTE Group") +
+  theme_bw() +
+  theme(strip.background = element_rect(fill = "lightblue"),
+        axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+```
+
+## DTE isoforms
+Isoforms sort of seem more in STAR, but there is no real difference
+```{r}
+dte_iso <- rbind(hisat2_dte_stdev,
+      kallisto_dte_stdev,
+      salmon_dte_stdev,
+      star_dte_stdev,
+      all_dte_stdev) %>%
+  dplyr::select(transcript_id, method) %>%
+  distinct() %>%
+  left_join(dplyr::select(gene_txp_anno, transcript_id, gene_id),
+            by = "transcript_id") %>%
+  dplyr::select(gene_id, method) %>%
+  left_join(dplyr::select(dplyr::filter(gene_txp_anno, type == "transcript"), transcript_id, gene_id),
+            by = "gene_id") %>%
+  group_by(gene_id, method) %>%
+  summarise(isoforms = n())
+
+dte_iso %>%
+  group_by(method) %>%
+  summarise(min = min(isoforms-1),
+            Q1 = quantile(isoforms-1, 0.25),
+            median = ceiling(median(isoforms-1)),
+            mean = mean(isoforms-1),
+            Q3 = ceiling(quantile(isoforms-1, 0.75)),
+            max = max(isoforms-1),
+            total = sum(isoforms-1))
+
+dte_iso %>%
+  ggplot(aes(x = method, y = log2(isoforms))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(x = "Method",
+       y = "Number of Isoforms (log2)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12))
+```
+
+## DTE Biotype
+Majority protein coding, slightly more NMD in exclusives compared to the transcripts found in all
+```{r}
+full_join(all_methods_tx_dte$tx_biotype %>%
+            table() %>%
+            as.data.frame() %>%
+            set_colnames(c("tx_biotype", "All_DTE_ex")),
+          full_join(
+            full_join(
+              hisat2_dte_exclusive$tx_biotype %>% 
+                table() %>%
+                as.data.frame() %>%
+                set_colnames(c("tx_biotype", "HISAT2_DTE_ex")),
+              kallisto_dte_exclusive$tx_biotype %>%
+                table() %>% 
+                as.data.frame() %>%
+                set_colnames(c("tx_biotype", "Kallisto_DTE_ex")),
+              by = "tx_biotype"
+            ),
+            full_join(
+              salmon_dte_exclusive$tx_biotype %>% 
+                table() %>% 
+                as.data.frame() %>%
+                set_colnames(c("tx_biotype", "Salmon_DTE_ex")),
+              star_dte_exclusive$tx_biotype %>%
+                table() %>% 
+                as.data.frame() %>%
+                set_colnames(c("tx_biotype", "STAR_DTE_ex")),
+              by = "tx_biotype"
+            ),
+            by = "tx_biotype"
+          ),
+          by = "tx_biotype") %>%
+  lapply(replace_na, 0) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  write_csv(here("data/dte_biotypes.csv"))
+```
+
+## DTU variance
+Will be limited to transcripts found in all samples
+```{r}
+hisat2_dtu_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% hisat2_dtu_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "HISAT2")
+
+kallisto_dtu_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% kallisto_dtu_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "Kallisto")
+
+salmon_dtu_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% salmon_dtu_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "Salmon")
+
+star_dtu_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% star_dtu_exclusive$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "STAR")
+
+all_dtu_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% all_methods_tx_dtu$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "All")
+
+rbind(hisat2_dtu_stdev,
+      kallisto_dtu_stdev,
+      salmon_dtu_stdev,
+      star_dtu_stdev,
+      all_dtu_stdev) %>%
+  ggplot(aes(x = group, y = log2(stdev), fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_y_continuous(limits = c(-7.7, 3)) +
+  scale_fill_viridis_d() +
+  facet_wrap(~ group,
+             scales = "free") +
+  labs(x = "Sample ID",
+       y = "Standard Deviation (log2)",
+       fill = "DTU Group") +
+  theme_bw() +
+  theme(strip.background = element_rect(fill = "lightblue"),
+        axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+```
+
+## DTU isoforms
+Isoforms don't seem to be all that wildy different here
+```{r}
+dtu_iso <- rbind(hisat2_dtu_stdev,
+                 kallisto_dtu_stdev,
+                 salmon_dtu_stdev,
+                 star_dtu_stdev,
+                 all_dtu_stdev) %>%
+  dplyr::select(transcript_id, method) %>%
+  distinct() %>%
+  left_join(dplyr::select(gene_txp_anno, transcript_id, gene_id),
+            by = "transcript_id") %>%
+  dplyr::select(gene_id, method) %>%
+  left_join(dplyr::select(dplyr::filter(gene_txp_anno, type == "transcript"), transcript_id, gene_id),
+            by = "gene_id") %>%
+  group_by(gene_id, method) %>%
+  summarise(isoforms = n())
+
+dtu_iso %>%
+  group_by(method) %>%
+  summarise(min = min(isoforms-1),
+            Q1 = quantile(isoforms-1, 0.25),
+            median = ceiling(median(isoforms-1)),
+            mean = mean(isoforms-1),
+            Q3 = ceiling(quantile(isoforms-1, 0.75)),
+            max = max(isoforms-1),
+            total = sum(isoforms-1))
+
+Tdtu_iso %>%
+  ggplot(aes(x = method, y = log2(isoforms))) +
+  geom_boxplot(fill = "lightblue") +
+  labs(x = "Method",
+       y = "Number of Isoforms (log2)") +
+  theme_bw() +
+  theme(axis.title = element_text(colour = "black", size = 14),
+        axis.text = element_text(colour = "black", size = 12))
+```
+
+## DTU Biotypes
+Main takeaway is that the four exclusives had slightly more nonprotein-coding species than the all group. Though all had majority protein coding transcripts.
+```{r}
+hisat2_tx_dtu_ex <- hisat2_dtu %>%
+  dplyr::filter(txpFDR < 0.05)
+
+kallisto_tx_dtu_ex <- kallisto_dtu %>%
+  dplyr::filter(txpFDR < 0.05)
+
+salmon_tx_dtu_ex <- salmon_dtu %>%
+  dplyr::filter(txpFDR < 0.05)
+
+star_tx_dtu_ex <- star_dtu %>%
+  dplyr::filter(txpFDR < 0.05)
+
+h_dtu_tx <- hisat2_tx_dtu_ex %>%
+  dplyr::filter(!Transcript %in% c(kallisto_tx_dtu_ex[["Transcript"]],
+                                      salmon_tx_dtu_ex[["Transcript"]],
+                                      star_tx_dtu_ex[["Transcript"]]))
+
+h_dtu_bt_tb <- h_dtu_tx %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_biotype"),
+            by = c("Transcript" = "transcript_id")) %>%
+  dplyr::select("transcript_biotype") %>% 
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("tx_biotype", "HISAT2_DTU_ex"))
+
+k_dtu_tx <- kallisto_tx_dtu_ex %>%
+  dplyr::filter(!Transcript %in% c(hisat2_tx_dtu_ex[["Transcript"]],
+                                      salmon_tx_dtu_ex[["Transcript"]],
+                                      star_tx_dtu_ex[["Transcript"]]))
+
+k_dtu_bt_tb <- k_dtu_tx %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_biotype"),
+            by = c("Transcript" = "transcript_id")) %>%
+  dplyr::select("transcript_biotype") %>% 
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("tx_biotype", "Kallisto_DTU_ex"))
+
+sal_dtu_tx <- salmon_tx_dtu_ex %>%
+  dplyr::filter(!Transcript %in% c(kallisto_tx_dtu_ex[["Transcript"]],
+                                      hisat2_tx_dtu_ex[["Transcript"]],
+                                      star_tx_dtu_ex[["Transcript"]]))
+sal_dtu_bt_tb <- sal_dtu_tx %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_biotype"),
+            by = c("Transcript" = "transcript_id")) %>%
+  dplyr::select("transcript_biotype") %>% 
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("tx_biotype", "Salmon_DTU_ex"))
+
+star_dtu_tx <- star_tx_dtu_ex %>%
+  dplyr::filter(!Transcript %in% c(kallisto_tx_dtu_ex[["Transcript"]],
+                                      salmon_tx_dtu_ex[["Transcript"]],
+                                      hisat2_tx_dtu_ex[["Transcript"]]))
+
+star_dtu_bt_tb <- star_dtu_tx %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_biotype"),
+            by = c("Transcript" = "transcript_id")) %>%
+  dplyr::select("transcript_biotype") %>% 
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("tx_biotype", "STAR_DTU_ex"))
+
+all_dtu_tx <- inner_join(
+  inner_join(dplyr::filter(hisat2_dtu, txpFDR < 0.05),
+             dplyr::filter(kallisto_dtu, txpFDR < 0.05),
+             by = "Transcript"),
+  inner_join(dplyr::filter(salmon_dtu, txpFDR < 0.05),
+             dplyr::filter(star_dtu, txpFDR < 0.05),
+             by = "Transcript"),
+  by = "Transcript"
+)
+
+all_dtu_bt_tb <- all_dtu_tx %>%
+  left_join(dplyr::select(gene_txp_anno,
+                          "transcript_id", "transcript_biotype"),
+            by = c("Transcript" = "transcript_id")) %>%
+  dplyr::select("transcript_biotype") %>% 
+  table() %>%
+  as.data.frame() %>%
+  set_colnames(c("tx_biotype", "All_DTU_ex"))
+
+full_join(
+  full_join(
+    full_join(
+      h_dtu_bt_tb,
+      k_dtu_bt_tb,
+      by = "tx_biotype"
+    ),
+    full_join(
+      sal_dtu_bt_tb,
+      star_dtu_bt_tb,
+      by = "tx_biotype"
+    )
+  ),
+  all_dtu_bt_tb,
+  by = "tx_biotype"
+) %>%
+  lapply(replace_na, 0) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  write_csv(here("data/dtu_biotypes.csv"))
+```
+
+## Uniques variance
+Naturally we won't get anything here because we can't get the variance stabilised sd if these don't exist in all samples
+```{r}
+hisat2_unique_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% hisat2_unique_incl$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "HISAT2")
+
+kallisto_unique_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% kallisto_unique$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "Kallisto")
+
+salmon_unique_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% salmon_unique$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "Salmon")
+
+star_unique_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% star_unique$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "STAR")
+
+concordant_stdev <- stdev_df %>%
+  dplyr::filter(transcript_id %in% highcor$transcript_id) %>%
+  pivot_longer(cols = colnames(stdev_df)[-1],
+               names_to = "group",
+               values_to = "stdev") %>%
+  dplyr::mutate(method = "All")
+
+rbind(hisat2_unique_stdev,
+      kallisto_unique_stdev,
+      salmon_unique_stdev,
+      star_unique_stdev,
+      concordant_stdev) %>%
+  ggplot(aes(x = group, y = log2(stdev), fill = method)) +
+  geom_boxplot(colour = "black") +
+  scale_y_continuous(limits = c(-7.7, 3)) +
+  scale_fill_viridis_d() +
+  facet_wrap(~ group,
+             scales = "free") +
+  labs(x = "Sample ID",
+       y = "Standard Deviation (log2)",
+       fill = "Unique Group") +
+  theme_bw() +
+  theme(strip.background = element_rect(fill = "lightblue"),
+        axis.title = element_text(colour = "black", size = 12),
+        axis.text = element_text(colour = "black", size = 10))
+```

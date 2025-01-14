@@ -1,0 +1,20 @@
+Lmod has detected the following error: Cannot load module "hwloc/1.11.10"
+because these module(s) are loaded:
+   hwloc
+
+While processing the following module(s):
+    Module fullname    Module Filename
+    ---------------    ---------------
+    hwloc/1.11.10      /apps/skl/modules/all/hwloc/1.11.10.lua
+    OpenMPI/gcc/3.1.1  /apps/skl/modules/all/OpenMPI/gcc/3.1.1.lua
+    foss/2018b         /apps/skl/modules/all/foss/2018b.lua
+    SAMtools/1.8       /apps/skl/modules/all/SAMtools/1.8.lua
+
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
+/hpcfs/users/a1666761/290921_trophoblast_dtu/scripts/bam_processing/samtools_sort.sh: line 15: samtools: command not found
